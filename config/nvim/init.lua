@@ -12,13 +12,31 @@ end
 vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
+	-- LSP
+	{
+		'neovim/nvim-lspconfig', -- LSP configurations for Neovim
+		config = function()
+			require('lspconfig').clangd.setup{
+				cmd = {
+					"clangd",
+					"--background-index",
+					"--clang-tidy",
+					"--compile-commands-dir=" .. vim.fn.getcwd() .. "/build/debug",
+				},
+				capabilities = require('cmp_nvim_lsp').default_capabilities()
+			}
+		end
+	},
+	-- Autocompletion plugins
+	'hrsh7th/nvim-cmp',      -- Completion engine
+	'hrsh7th/cmp-nvim-lsp',  -- LSP source for nvim-cmp
+	'L3MON4D3/LuaSnip',      -- Snippet engine
+	'saadparwaiz1/cmp_luasnip', -- Snippet completions
 	-- FZF and its integration plugin
 	{
-			"junegunn/fzf",
-			build = "./install --bin"
+		"ibhagwan/fzf-lua",
+		dependencies = { "nvim-tree/nvim-web-devicons" } -- Optional: Adds file icons
 	},
-	"junegunn/fzf.vim",  -- Provides FZF commands and functionality in Neovim
-
 	-- TMUX Navigator
 	{
 		"christoomey/vim-tmux-navigator",
@@ -37,10 +55,6 @@ require("lazy").setup({
 			{ "<c-\\>", "<cmd><C-U>TmuxNavigatePrevious<cr>" },
 		},
 	},
-	-- Plugin for 'one' colorscheme
-	{
-		"rakr/vim-one"
-	},
     {
         "miikanissi/modus-themes.nvim",
         priority = 1000
@@ -57,11 +71,68 @@ require("lazy").setup({
     {"tpope/vim-fugitive"},
 
     -- fast file switching
-    { 'derekwyatt/vim-fswitch' }
+    { 'derekwyatt/vim-fswitch' },
+
+	-- CTag
+	{ 'yegappan/taglist' },
 })
 
+local fzf = require('fzf-lua')
+fzf.setup({
+	winopts = {
+		height = 0.85,  -- Window height
+		width = 0.80,   -- Window width
+		preview = {
+			layout = 'vertical', -- Preview layout: horizontal or vertical
+			vertical = 'down:45%', -- Vertical preview height
+		},
+	},
+	files = {
+		prompt = 'Files❯ ',
+		git_icons = true,   -- Show git icons
+		file_icons = true,  -- Show file icons
+	},
+	grep = {
+		prompt = 'Rg❯ ',
+		input_prompt = 'Grep For❯ ',
+		git_icons = true,
+		file_icons = true,
+	}
+})
+
+vim.keymap.set('n', '<leader>t', function()
+	fzf.lsp_live_workspace_symbols({
+		prompt = 'Function❯ ',
+		fzf_opts = { ['--exact'] = '' }
+	})
+end, { desc = 'Search workspace symbols' })
+
+local cmp = require('cmp')
+
+cmp.setup({
+	snippet = {
+		expand = function(args)
+			require('luasnip').lsp_expand(args.body) -- For LuaSnip users
+		end,
+	},
+	mapping = cmp.mapping.preset.insert({
+		['<C-b>'] = cmp.mapping.scroll_docs(-4),
+		['<C-f>'] = cmp.mapping.scroll_docs(4),
+		['<C-Space>'] = cmp.mapping.complete(),
+		['<C-e>'] = cmp.mapping.abort(),
+		['<CR>'] = cmp.mapping.confirm({ select = true }), -- Accept completion
+	}),
+	sources = cmp.config.sources({
+		{ name = 'nvim_lsp' },
+		{ name = 'luasnip' },
+	}, {
+		{ name = 'buffer' },
+		{ name = 'path' },
+	})
+})
+
+
 vim.g.mapleader = ","
-vim.g.ackprg = 'ag --vimgrep -U'
 vim.g.gundo_prefer_python3 = 1
 
 -- color theme
@@ -82,9 +153,14 @@ let g:airline_section_z=airline#section#create(['%p%%', 'maxlinenr', 'colnr'])
 
 
 -- Fuzzy search of ALL FILES is ',f'
-vim.keymap.set('n', '<leader>f', ':FZF<CR>',        { silent = true })
+vim.keymap.set('n', '<leader>f', fzf.files, { desc = 'Find Files' })
 -- Fuzzy search of OPEN BUFFERS is ',b'
-vim.keymap.set('n', '<leader>b', ':Buffers<CR>',    { silent = true })
+vim.keymap.set('n', '<leader>b', fzf.buffers, { desc = 'Switch Buffers' })
+-- Search for strings inside files
+vim.keymap.set('n', '<leader>a', function()
+	local cword = vim.fn.expand('<cword>')
+	fzf.live_grep({ search = cword })
+end, { desc = 'Grep word under cursor' })
 -- Use space bar to fold code
 vim.keymap.set('n', '<Space>',   'za',              { silent = true })
 -- Clear existing string search when hitting enter
@@ -96,8 +172,6 @@ vim.keymap.set('n', '<Left>',  ':echo "no!"<cr>',   { silent = true})
 vim.keymap.set('n', '<Right>', ':echo "no!"<cr>',   { silent = true})
 vim.keymap.set('n', '<Up>',    ':echo "no!"<cr>',   { silent = true})
 vim.keymap.set('n', '<Down>',  ':echo "no!"<cr>',   { silent = true})
--- Ack
-vim.keymap.set('n', '<Leader>a', ':LAck!<Space>')
 -- Undotree
 vim.keymap.set('n', '<F5>', vim.cmd.UndotreeToggle)
 -- Kill buffer and go back to previous buffer
@@ -151,7 +225,9 @@ vim.api.nvim_create_autocmd("BufRead", {
         vim.b.fswitchdst = 'h,hpp'
     end,
 })
-
+-- Change the color of line numbers
+vim.api.nvim_set_hl(0, 'LineNr', { fg = '#404040' })  -- Regular line numbers (gray)
+vim.api.nvim_set_hl(0, 'CursorLineNr', { fg = '#FFFF00' })  -- Current line number (yellow)
 
 vim.o.termguicolors  = true        -- Use terminal colors
 vim.o.background     = "dark"      -- Dark theme
@@ -179,6 +255,9 @@ vim.o.foldmethod     = 'syntax'    -- Default code folding to syntax
 vim.o.foldlevelstart = 99      -- Do not fold when file is originally open
 vim.o.tags           = ".tags"
 
+vim.g.autotagTagsFile=".tags"
+vim.g.autotagmaxTagsFileSize="1000000000"
+
 
 -- show when tabs exists
 -- show when trailing spaces exist
@@ -189,7 +268,7 @@ vim.o.listchars = "tab:»·,trail:◘,extends:>,precedes:<"
 
 _G.LRefreshTags = function()
     local cwd = vim.fn.getcwd()
-    local cmd = "rm -f " .. vim.g.autotagTagsFile .. "; ctags -R -f " .. cwd .. "/.tags *"
+    local cmd = "rm -f " .. vim.o.tags .. "; ctags -R -f " .. cwd .. "/.tags *"
     local resp = vim.fn.system(cmd)
 end
 vim.api.nvim_create_user_command('LRefreshTags', LRefreshTags, { bang = true, nargs = '*' })
