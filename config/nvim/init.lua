@@ -1,13 +1,13 @@
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.loop.fs_stat(lazypath) then
-  vim.fn.system({
-    "git",
-    "clone",
-    "--filter=blob:none",
-    "https://github.com/folke/lazy.nvim.git",
-    "--branch=stable", -- latest stable release
-    lazypath,
-  })
+	vim.fn.system({
+		"git",
+		"clone",
+		"--filter=blob:none",
+		"https://github.com/folke/lazy.nvim.git",
+		"--branch=stable", -- latest stable release
+		lazypath,
+	})
 end
 vim.opt.rtp:prepend(lazypath)
 
@@ -30,8 +30,6 @@ require("lazy").setup({
 	-- Autocompletion plugins
 	'hrsh7th/nvim-cmp',      -- Completion engine
 	'hrsh7th/cmp-nvim-lsp',  -- LSP source for nvim-cmp
-	'L3MON4D3/LuaSnip',      -- Snippet engine
-	'saadparwaiz1/cmp_luasnip', -- Snippet completions
 	-- FZF and its integration plugin
 	{
 		"ibhagwan/fzf-lua",
@@ -55,23 +53,35 @@ require("lazy").setup({
 			{ "<c-\\>", "<cmd><C-U>TmuxNavigatePrevious<cr>" },
 		},
 	},
-    {
-        "miikanissi/modus-themes.nvim",
-        priority = 1000
-    },
+	{
+		"navarasu/onedark.nvim",
+		config = function()
+			require("onedark").setup({
+				style = "dark", -- Ensure you're using the dark style
+				highlights = {
+					["ColorColumn"]  = {                bg = '$orange'               },
+					["Folded"]       = {fg = '#FFFF00', bg = '$black', fmt = 'bold'  },
+					["CursorLine"]   = {                bg = '#101010'               },
+					["Normal"]       = {                bg = '#000000'               },
+					["EndOfBuffer"]  = {                bg = '#000000'               }
+				}
+			})
+			require("onedark").load()
+		end,
+	},
 
-    -- Borders
-    {"vim-airline/vim-airline"},  -- The main vim-airline plugin
-    {"vim-airline/vim-airline-themes"},  -- Optional: for additional themes
+	-- Borders
+	{"vim-airline/vim-airline"},  -- The main vim-airline plugin
+	{"vim-airline/vim-airline-themes"},  -- Optional: for additional themes
 
-    -- History browsing
-    { "mbbill/undotree" },
+	-- History browsing
+	{ "mbbill/undotree" },
 
-    -- GIT
-    {"tpope/vim-fugitive"},
+	-- GIT
+	{"tpope/vim-fugitive"},
 
-    -- fast file switching
-    { 'derekwyatt/vim-fswitch' },
+	-- fast file switching
+	{ 'derekwyatt/vim-fswitch' },
 
 	-- CTag
 	{ 'yegappan/taglist' },
@@ -110,11 +120,6 @@ end, { desc = 'Search workspace symbols' })
 local cmp = require('cmp')
 
 cmp.setup({
-	snippet = {
-		expand = function(args)
-			require('luasnip').lsp_expand(args.body) -- For LuaSnip users
-		end,
-	},
 	mapping = cmp.mapping.preset.insert({
 		['<C-b>'] = cmp.mapping.scroll_docs(-4),
 		['<C-f>'] = cmp.mapping.scroll_docs(4),
@@ -124,7 +129,6 @@ cmp.setup({
 	}),
 	sources = cmp.config.sources({
 		{ name = 'nvim_lsp' },
-		{ name = 'luasnip' },
 	}, {
 		{ name = 'buffer' },
 		{ name = 'path' },
@@ -134,9 +138,6 @@ cmp.setup({
 
 vim.g.mapleader = ","
 vim.g.gundo_prefer_python3 = 1
-
--- color theme
-vim.cmd([[colorscheme modus]])
 
 -- Airline
 vim.cmd([[
@@ -179,51 +180,51 @@ vim.keymap.set('n', '<leader>d', ':b#<bar>bd#<CR>', { silent = true})
 
 -- Enable dts syntax
 vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
-    pattern = {"*.dts", "*.dtsi", "*.overlay"},
-    callback = function()
-        vim.bo.filetype = "dts"
-        vim.opt_local.foldmethod = "indent"
-    end,
+	pattern = {"*.dts", "*.dtsi", "*.overlay"},
+	callback = function()
+		vim.bo.filetype = "dts"
+		vim.opt_local.foldmethod = "indent"
+	end,
 })
 
 -- turn syntax off for large files
 vim.api.nvim_create_autocmd("BufWinEnter", {
-    pattern = "*",
-    callback = function()
-        if vim.fn.line2byte(vim.fn.line("$") + 1) > 400000 then
-            vim.cmd("syntax clear")
-        end
-    end,
+	pattern = "*",
+	callback = function()
+		if vim.fn.line2byte(vim.fn.line("$") + 1) > 400000 then
+			vim.cmd("syntax clear")
+		end
+	end,
 })
 
 -- Set C defaults
 vim.api.nvim_create_autocmd("FileType", {
-    pattern = {"c", "cpp" },
-    callback = function()
-        vim.opt_local.wrap = false
-        vim.opt_local.tabstop = 4
-        vim.opt_local.shiftwidth = 4
-        vim.opt_local.softtabstop = 4
-        vim.opt_local.expandtab = true
-        vim.opt_local.colorcolumn = "80"
+	pattern = {"c", "cpp" },
+	callback = function()
+		vim.opt_local.wrap = false
+		vim.opt_local.tabstop = 4
+		vim.opt_local.shiftwidth = 4
+		vim.opt_local.softtabstop = 4
+		vim.opt_local.expandtab = true
+		vim.opt_local.colorcolumn = "80"
 
-        vim.keymap.set('n', '<leader>h', ':FSHere<CR>',       { silent = true })
-        vim.keymap.set('n', '<leader>H', ':FSSplitRight<CR>', { silent = true })
-    end,
+		vim.keymap.set('n', '<leader>h', ':FSHere<CR>',       { silent = true })
+		vim.keymap.set('n', '<leader>H', ':FSSplitRight<CR>', { silent = true })
+	end,
 })
 vim.api.nvim_create_autocmd("BufRead", {
-    pattern = {"c", "cpp" },
-    callback = function()
-        vim.b.fswitchlocs =  '.,../Inc,../include,../Include,../inc'
-        vim.b.fswitchdst = 'h,hpp'
-    end,
+	pattern = {"c", "cpp" },
+	callback = function()
+		vim.b.fswitchlocs =  '.,../Inc,../include,../Include,../inc'
+		vim.b.fswitchdst = 'h,hpp'
+	end,
 })
 vim.api.nvim_create_autocmd("BufRead", {
-    pattern = {"h", "hpp" },
-    callback = function()
-        vim.b.fswitchlocs =  '.,../Src,../source,../Source,../src'
-        vim.b.fswitchdst = 'h,hpp'
-    end,
+	pattern = {"h", "hpp" },
+	callback = function()
+		vim.b.fswitchlocs =  '.,../Src,../source,../Source,../src'
+		vim.b.fswitchdst = 'h,hpp'
+	end,
 })
 -- Change the color of line numbers
 vim.api.nvim_set_hl(0, 'LineNr', { fg = '#404040' })  -- Regular line numbers (gray)
@@ -267,9 +268,9 @@ vim.o.listchars = "tab:»·,trail:◘,extends:>,precedes:<"
 
 
 _G.LRefreshTags = function()
-    local cwd = vim.fn.getcwd()
-    local cmd = "rm -f " .. vim.o.tags .. "; ctags -R -f " .. cwd .. "/.tags *"
-    local resp = vim.fn.system(cmd)
+	local cwd = vim.fn.getcwd()
+	local cmd = "rm -f " .. vim.o.tags .. "; ctags -R -f " .. cwd .. "/.tags *"
+	local resp = vim.fn.system(cmd)
 end
 vim.api.nvim_create_user_command('LRefreshTags', LRefreshTags, { bang = true, nargs = '*' })
 
