@@ -21,6 +21,9 @@ require("lazy").setup({
 					"clangd",
 					"--background-index",
 					"--clang-tidy",
+					"--enable-config",
+					"--header-insertion-decorators",
+					"--completion-style=bundled",
 					"--compile-commands-dir=" .. vim.fn.getcwd() .. "/build/debug",
 				},
 				capabilities = require('cmp_nvim_lsp').default_capabilities()
@@ -110,12 +113,18 @@ fzf.setup({
 	}
 })
 
+vim.keymap.set('n', '<C-\\>', function()
+  vim.lsp.buf.code_action({
+    apply = true, -- Automatically apply the first code action
+  })
+end, { desc = "Auto Fix Code Action" })
+
 vim.keymap.set('n', '<leader>t', function()
 	fzf.lsp_live_workspace_symbols({
 		prompt = 'Function❯ ',
 		fzf_opts = { ['--exact'] = '' }
 	})
-end, { desc = 'Search workspace symbols' })
+end, { desc = 'Search workspace symbols. Doesnt work right now :(' })
 
 local cmp = require('cmp')
 
