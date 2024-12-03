@@ -11,6 +11,9 @@ if not vim.loop.fs_stat(lazypath) then
 end
 vim.opt.rtp:prepend(lazypath)
 
+vim.g.mapleader = ","
+vim.g.gundo_prefer_python3 = 1
+
 require("lazy").setup({
 	-- LSP
 	{
@@ -88,7 +91,41 @@ require("lazy").setup({
 
 	-- CTag
 	{ 'yegappan/taglist' },
+
+	-- Surround
+	{ 'tpope/vim-surround' },
 })
+
+local cmp = require('cmp')
+
+cmp.setup({
+	mapping = cmp.mapping.preset.insert({
+		['<C-b>'] = cmp.mapping.scroll_docs(-4),
+		['<C-f>'] = cmp.mapping.scroll_docs(4),
+		['<C-Space>'] = cmp.mapping.complete(),
+		['<C-e>'] = cmp.mapping.abort(),
+		['<CR>'] = cmp.mapping.confirm({ select = true }), -- Accept completion
+	}),
+	sources = cmp.config.sources({
+		{ name = 'nvim_lsp' },
+	}, {
+		{ name = 'buffer' },
+		{ name = 'path' },
+	})
+})
+
+-- Airline
+vim.cmd([[
+" let g:airline_theme='onedark'
+" let g:airline_experimental=1
+let g:airline_section_c_only_filename=1
+let g:airline_stl_path_style='short'
+let g:airline#parts#ffenc#skip_expected_string='utf-8[unix]'
+let g:airline#extensions#taglist#enabled=0
+let g:airline#extensions#whitespace#mixed_indent_format='[%s]mi'
+let g:airline#extensions#whitespace#symbol=''
+let g:airline_section_z=airline#section#create(['%p%%', 'maxlinenr', 'colnr'])
+]])
 
 local fzf = require('fzf-lua')
 fzf.setup({
@@ -113,54 +150,10 @@ fzf.setup({
 	}
 })
 
-vim.keymap.set('n', '<C-\\>', function()
-  vim.lsp.buf.code_action({
-    apply = true, -- Automatically apply the first code action
-  })
-end, { desc = "Auto Fix Code Action" })
-
 vim.keymap.set('n', '<leader>t', function()
-	fzf.lsp_live_workspace_symbols({
-		prompt = 'Function❯ ',
-		fzf_opts = { ['--exact'] = '' }
-	})
-end, { desc = 'Search workspace symbols. Doesnt work right now :(' })
-
-local cmp = require('cmp')
-
-cmp.setup({
-	mapping = cmp.mapping.preset.insert({
-		['<C-b>'] = cmp.mapping.scroll_docs(-4),
-		['<C-f>'] = cmp.mapping.scroll_docs(4),
-		['<C-Space>'] = cmp.mapping.complete(),
-		['<C-e>'] = cmp.mapping.abort(),
-		['<CR>'] = cmp.mapping.confirm({ select = true }), -- Accept completion
-	}),
-	sources = cmp.config.sources({
-		{ name = 'nvim_lsp' },
-	}, {
-		{ name = 'buffer' },
-		{ name = 'path' },
-	})
-})
-
-
-vim.g.mapleader = ","
-vim.g.gundo_prefer_python3 = 1
-
--- Airline
-vim.cmd([[
-" let g:airline_theme='onedark'
-" let g:airline_experimental=1
-let g:airline_section_c_only_filename=1
-let g:airline_stl_path_style='short'
-let g:airline#parts#ffenc#skip_expected_string='utf-8[unix]'
-let g:airline#extensions#taglist#enabled=0
-let g:airline#extensions#whitespace#mixed_indent_format='[%s]mi'
-let g:airline#extensions#whitespace#symbol=''
-let g:airline_section_z=airline#section#create(['%p%%', 'maxlinenr', 'colnr'])
-]])
-
+	local cword = vim.fn.expand("<cword>") -- Get the word under the cursor
+	fzf.lsp_live_workspace_symbols({ prompt = 'Fn_', query = cword, })
+end, { noremap = true, silent = true, desc = 'Search workspace symbols.' })
 
 -- Fuzzy search of ALL FILES is ',f'
 vim.keymap.set('n', '<leader>f', fzf.files, { desc = 'Find Files' })
@@ -171,6 +164,13 @@ vim.keymap.set('n', '<leader>a', function()
 	local cword = vim.fn.expand('<cword>')
 	fzf.live_grep({ search = cword })
 end, { desc = 'Grep word under cursor' })
+
+vim.keymap.set('n', '<C-\\>', function()
+	vim.lsp.buf.code_action({
+		apply = true, -- Automatically apply the first code action
+	})
+end, { desc = "Auto Fix Code Action" })
+
 -- Use space bar to fold code
 vim.keymap.set('n', '<Space>',   'za',              { silent = true })
 -- Clear existing string search when hitting enter
@@ -186,6 +186,19 @@ vim.keymap.set('n', '<Down>',  ':echo "no!"<cr>',   { silent = true})
 vim.keymap.set('n', '<F5>', vim.cmd.UndotreeToggle)
 -- Kill buffer and go back to previous buffer
 vim.keymap.set('n', '<leader>d', ':b#<bar>bd#<CR>', { silent = true})
+
+-- Show clangd errors in full
+vim.api.nvim_create_autocmd("CursorHold", {
+  callback = function()
+    local opts = {
+      focusable = false,
+      border = "rounded",
+      source = "always",
+      prefix = "",
+    }
+    vim.diagnostic.open_float(nil, opts)
+  end,
+})
 
 -- Enable dts syntax
 vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
@@ -264,6 +277,8 @@ vim.o.splitbelow     = true        -- When splitting, move cursor to new window
 vim.o.foldmethod     = 'syntax'    -- Default code folding to syntax
 vim.o.foldlevelstart = 99      -- Do not fold when file is originally open
 vim.o.tags           = ".tags"
+vim.o.signcolumn     = 'yes'       -- Keep clangd sign column visible even when in editing mode
+vim.o.updatetime     = 1000        -- 1.0 seconds before floating window appears showing diagnostics
 
 vim.g.autotagTagsFile=".tags"
 vim.g.autotagmaxTagsFileSize="1000000000"
