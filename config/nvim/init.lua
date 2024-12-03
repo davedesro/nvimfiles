@@ -27,7 +27,6 @@ require("lazy").setup({
 					"--enable-config",
 					"--header-insertion-decorators",
 					"--completion-style=bundled",
-					"--compile-commands-dir=" .. vim.fn.getcwd() .. "/build/debug",
 				},
 				capabilities = require('cmp_nvim_lsp').default_capabilities()
 			}
