@@ -10,6 +10,7 @@ if not vim.loop.fs_stat(lazypath) then
 	})
 end
 vim.opt.rtp:prepend(lazypath)
+vim.opt.clipboard = "unnamedplus"
 
 vim.g.mapleader = ","
 vim.g.gundo_prefer_python3 = 1
@@ -58,6 +59,10 @@ require("lazy").setup({
 			{ "<c-\\>", "<cmd><C-U>TmuxNavigatePrevious<cr>" },
 		},
 	},
+    -- TMUX Clipboard
+    {
+        "roxma/vim-tmux-clipboard",
+    },
 	{
 		"navarasu/onedark.nvim",
 		config = function()
@@ -281,6 +286,7 @@ vim.o.updatetime     = 1000        -- 1.0 seconds before floating window appears
 
 vim.g.autotagTagsFile=".tags"
 vim.g.autotagmaxTagsFileSize="1000000000"
+vim.g.vim_tmux_clipboard_loadb_option = '-w'
 
 
 -- show when tabs exists
