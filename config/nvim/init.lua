@@ -63,6 +63,9 @@ require("lazy").setup({
     {
         "roxma/vim-tmux-clipboard",
     },
+    {
+        "mileszs/ack.vim"
+    },
 	{
 		"navarasu/onedark.nvim",
 		config = function()
@@ -163,13 +166,30 @@ end, { noremap = true, silent = true, desc = 'Search workspace symbols.' })
 vim.keymap.set('n', '<leader>f', fzf.files, { desc = 'Find Files' })
 -- Fuzzy search of OPEN BUFFERS is ',b'
 vim.keymap.set('n', '<leader>b', fzf.buffers, { desc = 'Switch Buffers' })
--- Search for strings inside files
-vim.keymap.set('n', '<leader>a', function()
+
+--
+-- Search for strings inside files. 3 ways
+--
+
+-- Live using fzf library and a modal window
+vim.keymap.set('n', '<leader>g', function()
 	local cword = vim.fn.expand('<cword>')
 	fzf.live_grep({ search = cword })
 end, { desc = 'Grep word under cursor' })
 
-vim.keymap.set('n', '<C-\\>', function()
+-- List of matches considering .gitignore in a persistent buffer
+vim.keymap.set('n', '<leader>a', function()
+	vim.g.ackprg = 'rg --vimgrep'
+	vim.api.nvim_feedkeys(":LAck! ", "n", false)
+end)
+
+-- List of matches of all files in the directory tree in a persistent buffer
+vim.keymap.set('n', '<leader>e', function()
+	vim.g.ackprg = 'rg --vimgrep --no-ignore'
+	vim.api.nvim_feedkeys(":LAck! ", "n", false)
+end)
+
+vim.keymap.set('n', '<C-f>', function()
 	vim.lsp.buf.code_action({
 		apply = true, -- Automatically apply the first code action
 	})
@@ -282,12 +302,11 @@ vim.o.foldmethod     = 'syntax'    -- Default code folding to syntax
 vim.o.foldlevelstart = 99      -- Do not fold when file is originally open
 vim.o.tags           = ".tags"
 vim.o.signcolumn     = 'yes'       -- Keep clangd sign column visible even when in editing mode
-vim.o.updatetime     = 1000        -- 1.0 seconds before floating window appears showing diagnostics
+vim.o.updatetime     = 2500        -- 1.0 seconds before floating window appears showing diagnostics
 
 vim.g.autotagTagsFile=".tags"
 vim.g.autotagmaxTagsFileSize="1000000000"
 vim.g.vim_tmux_clipboard_loadb_option = '-w'
-
 
 -- show when tabs exists
 -- show when trailing spaces exist
