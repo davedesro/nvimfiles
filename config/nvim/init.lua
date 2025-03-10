@@ -167,6 +167,10 @@ vim.keymap.set('n', '<leader>f', fzf.files, { desc = 'Find Files' })
 -- Fuzzy search of OPEN BUFFERS is ',b'
 vim.keymap.set('n', '<leader>b', fzf.buffers, { desc = 'Switch Buffers' })
 
+vim.keymap.set('n', '<leader>pwd', function()
+    print(vim.fn.expand('%:p:h'))
+end, { desc = 'Print directory of current file' })
+
 --
 -- Search for strings inside files. 3 ways
 --
