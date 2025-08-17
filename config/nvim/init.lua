@@ -59,13 +59,13 @@ require("lazy").setup({
 			{ "<c-\\>", "<cmd><C-U>TmuxNavigatePrevious<cr>" },
 		},
 	},
-    -- TMUX Clipboard
-    {
-        "roxma/vim-tmux-clipboard",
-    },
-    {
-        "mileszs/ack.vim"
-    },
+	-- TMUX Clipboard
+	{
+		"roxma/vim-tmux-clipboard",
+	},
+	{
+		"mileszs/ack.vim"
+	},
 	{
 		"navarasu/onedark.nvim",
 		config = function()
@@ -81,6 +81,43 @@ require("lazy").setup({
 			})
 			require("onedark").load()
 		end,
+	},
+	{
+		"coder/claudecode.nvim",
+		dependencies = { "folke/snacks.nvim", },
+		config = true,
+		keys = {
+			{ "<leader>c", "<cmd>ClaudeCode --continue<cr>", desc = "Resume Claude", mode = { "n", "x" } },
+			{ "<leader>lr", "<cmd>ClaudeCode --resume<cr>", desc = "Continue Claude" },
+			{ "<leader>lf", "<cmd>ClaudeCodeFocus<cr>", desc = "Focus Claude", mode = { "n", "x" } },
+			{ "<leader>lm", "<cmd>ClaudeCodeSelectModel<cr>", desc = "Select Claude model" },
+			{ "<leader>lb", "<cmd>ClaudeCodeAdd %<cr>", desc = "Add current buffer" },
+			{ "<leader>ls", "<cmd>ClaudeCodeSend<cr>", mode = "v", desc = "Send to Claude" },
+			{
+				"<leader>ls",
+				"<cmd>ClaudeCodeTreeAdd<cr>",
+				desc = "Add file",
+				ft = { "NvimTree", "neo-tree", "oil", "minifiles" },
+			},
+			-- Diff management
+			{ "<leader>la", "<cmd>ClaudeCodeDiffAccept<cr>", desc = "Accept diff" },
+			{ "<leader>ld", "<cmd>ClaudeCodeDiffDeny<cr>", desc = "Deny diff" },
+		},
+		opts = {
+			terminal = {
+				---@module "snacks"
+				---@type snacks.win.Config|{}
+				snacks_win_opts = {
+					position = "float",
+					width = 0.9,
+					height = 0.9,
+					keys = {
+						claude_hide_ctrl = { "<C-x>", function(self) self:hide() end, mode = "t", desc = "Hide (Ctrl+,)" },
+						claude_hide_esc = { "<C-\\><C-n>", function(self) self:hide() end, mode = "t", desc = "Hide (Ctrl+\\)" },
+					},
+				},
+			},
+		},
 	},
 
 	-- Borders
