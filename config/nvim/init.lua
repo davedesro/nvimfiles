@@ -16,23 +16,8 @@ vim.g.mapleader = ","
 vim.g.gundo_prefer_python3 = 1
 
 require("lazy").setup({
-	-- LSP
-	{
-		'neovim/nvim-lspconfig', -- LSP configurations for Neovim
-		config = function()
-			require('lspconfig').clangd.setup{
-				cmd = {
-					"clangd",
-					"--background-index",
-					"--clang-tidy",
-					"--enable-config",
-					"--header-insertion-decorators",
-					"--completion-style=bundled",
-				},
-				capabilities = require('cmp_nvim_lsp').default_capabilities()
-			}
-		end
-	},
+	-- LSP (native Neovim 0.11+ configuration)
+	-- No plugin needed for basic LSP configuration
 	-- Autocompletion plugins
 	'hrsh7th/nvim-cmp',      -- Completion engine
 	'hrsh7th/cmp-nvim-lsp',  -- LSP source for nvim-cmp
@@ -139,6 +124,32 @@ require("lazy").setup({
 
 	-- Surround
 	{ 'tpope/vim-surround' },
+})
+
+-- Native LSP configuration (Neovim 0.11+)
+-- Get capabilities from nvim-cmp
+local capabilities = require('cmp_nvim_lsp').default_capabilities()
+
+vim.lsp.config.clangd = {
+	cmd = {
+		"clangd",
+		"--background-index",
+		"--clang-tidy",
+		"--enable-config",
+		"--header-insertion-decorators",
+		"--completion-style=bundled",
+	},
+	capabilities = capabilities,
+	filetypes = { "c", "cpp", "objc", "objcpp" },
+	root_markers = { ".git", "compile_commands.json" },
+}
+
+-- Enable LSP for relevant filetypes
+vim.api.nvim_create_autocmd("FileType", {
+	pattern = { "c", "cpp", "objc", "objcpp" },
+	callback = function(args)
+		vim.lsp.enable("clangd")
+	end,
 })
 
 local cmp = require('cmp')
