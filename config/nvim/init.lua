@@ -88,11 +88,12 @@ require("lazy").setup({
 		config = true,
 		keys = {
 			{ "<leader>c", "<cmd>ClaudeCode --continue<cr>", desc = "Resume Claude", mode = { "n", "x" } },
+			{ "<C-x>",     "<cmd>ClaudeCode --continue<cr>", desc = "Resume Claude", mode = { "n", "x" } },
 			{ "<leader>lr", "<cmd>ClaudeCode --resume<cr>", desc = "Continue Claude" },
 			{ "<leader>lf", "<cmd>ClaudeCodeFocus<cr>", desc = "Focus Claude", mode = { "n", "x" } },
 			{ "<leader>lm", "<cmd>ClaudeCodeSelectModel<cr>", desc = "Select Claude model" },
 			{ "<leader>lb", "<cmd>ClaudeCodeAdd %<cr>", desc = "Add current buffer" },
-			{ "<leader>ls", "<cmd>ClaudeCodeSend<cr>", mode = "v", desc = "Send to Claude" },
+			{ "<leader>lv", "<cmd>ClaudeCodeSend<cr>", mode = "v", desc = "Send to Claude" },
 			{
 				"<leader>ls",
 				"<cmd>ClaudeCodeTreeAdd<cr>",
