@@ -375,3 +375,24 @@ _G.LRefreshTags = function()
 end
 vim.api.nvim_create_user_command('LRefreshTags', LRefreshTags, { bang = true, nargs = '*' })
 
+-- Repo-wide search and replace using args/argdo
+vim.keymap.set('n', '<leader>R', function()
+	local search = vim.fn.input('Search: ')
+	if search == '' then return end
+	local replace = vim.fn.input('Replace with: ')
+	if replace == '' then return end
+
+	-- Escape special characters for grep and vim regex
+	local grep_search = vim.fn.shellescape(search)
+	local vim_search = vim.fn.escape(search, '/\\')
+	local vim_replace = vim.fn.escape(replace, '/\\&')
+
+	-- Build and execute the commands
+	local args_cmd = 'args `grep -r -l ' .. grep_search .. ' .`'
+	local argdo_cmd = 'argdo %s/' .. vim_search .. '/' .. vim_replace .. '/g | update'
+
+	vim.cmd(args_cmd)
+	vim.cmd(argdo_cmd)
+	print('Replaced "' .. search .. '" with "' .. replace .. '"')
+end, { desc = 'Repo-wide search and replace' })
+
