@@ -387,8 +387,8 @@ vim.keymap.set('n', '<leader>R', function()
 	local vim_search = vim.fn.escape(search, '/\\')
 	local vim_replace = vim.fn.escape(replace, '/\\&')
 
-	-- Build and execute the commands
-	local args_cmd = 'args `grep -r -l ' .. grep_search .. ' .`'
+	-- Build and execute the commands (git grep respects .gitignore)
+	local args_cmd = 'args `git grep -l ' .. grep_search .. '`'
 	local argdo_cmd = 'argdo %s/' .. vim_search .. '/' .. vim_replace .. '/g | update'
 
 	vim.cmd(args_cmd)
