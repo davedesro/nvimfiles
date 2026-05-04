@@ -103,6 +103,10 @@ require("lazy").setup({
 					keys = {
 						claude_hide_ctrl = { "<C-x>", function(self) self:hide() end, mode = "t", desc = "Hide (Ctrl+,)" },
 						claude_hide_esc = { "<C-\\><C-n>", function(self) self:hide() end, mode = "t", desc = "Hide (Ctrl+\\)" },
+						claude_nav_left  = { "<C-h>", function(self) self:hide(); vim.cmd("TmuxNavigateLeft")  end, mode = "t", desc = "Nav left" },
+						claude_nav_down  = { "<C-j>", function(self) self:hide(); vim.cmd("TmuxNavigateDown")  end, mode = "t", desc = "Nav down" },
+						claude_nav_up    = { "<C-k>", function(self) self:hide(); vim.cmd("TmuxNavigateUp")    end, mode = "t", desc = "Nav up" },
+						claude_nav_right = { "<C-l>", function(self) self:hide(); vim.cmd("TmuxNavigateRight") end, mode = "t", desc = "Nav right" },
 					},
 				},
 			},
