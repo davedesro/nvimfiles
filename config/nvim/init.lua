@@ -59,7 +59,7 @@ require("lazy").setup({
 				highlights = {
 					["ColorColumn"]  = {                bg = '$orange'               },
 					["Folded"]       = {fg = '#FFFF00', bg = '$black', fmt = 'bold'  },
-					["CursorLine"]   = {                bg = '#101010'               },
+					["CursorLine"]   = {                bg = '#202020'               },
 					["Normal"]       = {                bg = '#000000'               },
 					["EndOfBuffer"]  = {                bg = '#000000'               }
 				}
@@ -97,6 +97,9 @@ require("lazy").setup({
 					position = "float",
 					width = 0.9,
 					height = 0.9,
+					wo = {
+						winhighlight = "Normal:ClaudeTermBg,NormalNC:ClaudeTermBg",
+					},
 					keys = {
 						claude_hide_ctrl = { "<C-x>", function(self) self:hide() end, mode = "t", desc = "Hide (Ctrl+,)" },
 						claude_hide_esc = { "<C-\\><C-n>", function(self) self:hide() end, mode = "t", desc = "Hide (Ctrl+\\)" },
@@ -325,6 +328,12 @@ vim.api.nvim_create_autocmd("BufRead", {
 		vim.b.fswitchdst = 'h,hpp'
 	end,
 })
+
+local function set_claude_term_bg()
+	vim.api.nvim_set_hl(0, "ClaudeTermBg", { bg = "#00005f" })
+end
+set_claude_term_bg()
+vim.api.nvim_create_autocmd("ColorScheme", { callback = set_claude_term_bg })
 -- Change the color of line numbers
 vim.api.nvim_set_hl(0, 'LineNr', { fg = '#404040' })  -- Regular line numbers (gray)
 vim.api.nvim_set_hl(0, 'CursorLineNr', { fg = '#FFFF00' })  -- Current line number (yellow)
