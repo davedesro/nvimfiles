@@ -195,6 +195,45 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 
 require('mini.animate').setup()
+local minimap = require('mini.map')
+minimap.setup({
+	integrations = {
+		minimap.gen_integration.builtin_search(),
+		-- default is errors only; clangd runs with --clang-tidy so warnings matter
+		minimap.gen_integration.diagnostic({
+			error = 'DiagnosticFloatingError',
+			warn  = 'DiagnosticFloatingWarn',
+		}),
+	},
+	symbols = {
+		-- Default encode symbols are the U+1FB00 "Legacy Computing" 3x2 blocks,
+		-- which many terminal fonts lack (renders as tofu/blank). The 2x2 set is
+		-- plain U+2580 block elements, available everywhere.
+		encode = minimap.gen_encode_symbols.block('2x2'),
+	},
+	-- window defaults are already side='right', width=10, winblend=25
+})
+
+vim.keymap.set('n', '<leader>mm', minimap.toggle,       { desc = 'Toggle minimap' })
+vim.keymap.set('n', '<leader>ms', minimap.toggle_side,  { desc = 'Toggle minimap side' })
+vim.keymap.set('n', '<leader>mf', minimap.toggle_focus, { desc = 'Focus minimap' })
+
+-- mini.map deliberately provides no autoopen; wire it up for C/C++ buffers.
+vim.api.nvim_create_autocmd("FileType", {
+	group    = vim.api.nvim_create_augroup("MiniMapAutoOpen", { clear = true }),
+	pattern  = { "c", "cpp", "objc", "objcpp" },
+	callback = function(args)
+		-- skip fzf-lua previews, claudecode scratch buffers, etc.
+		if vim.bo[args.buf].buftype ~= "" then return end
+		vim.schedule(function()
+			-- FileType also fires for buffers loaded without a window
+			if vim.api.nvim_get_current_buf() ~= args.buf then return end
+			-- skip if this buffer landed inside a float
+			if vim.api.nvim_win_get_config(0).relative ~= "" then return end
+			minimap.open()
+		end)
+	end,
+})
 
 local cmp = require('cmp')
 
@@ -341,7 +380,8 @@ vim.api.nvim_create_autocmd("BufWinEnter", {
 })
 
 vim.api.nvim_create_autocmd("FileType", {
-	pattern = { "c", "cpp", "h", "hpp" },
+	-- ".h"/".hpp" are not filetypes; headers are detected as "c"/"cpp" already
+	pattern = { "c", "cpp" },
 	callback = function(args)
 		vim.opt_local.wrap = false
 		vim.opt_local.colorcolumn = "80"
@@ -352,7 +392,6 @@ vim.api.nvim_create_autocmd("FileType", {
 			bo.shiftwidth = 4
 			bo.softtabstop = 4
 			bo.expandtab = true
-			return
 		else
 			for line in io.lines(found) do
 				local k, v = line:match("^%s*([%w]+)%s*:%s*(.-)%s*$")
@@ -363,8 +402,8 @@ vim.api.nvim_create_autocmd("FileType", {
 				end
 			end
 		end
-		vim.keymap.set('n', '<leader>h', ':FSHere<CR>',       { silent = true })
-		vim.keymap.set('n', '<leader>H', ':FSSplitRight<CR>', { silent = true })
+		vim.keymap.set('n', '<leader>h', ':FSHere<CR>',       { silent = true, buffer = args.buf })
+		vim.keymap.set('n', '<leader>H', ':FSSplitRight<CR>', { silent = true, buffer = args.buf })
 	end,
 })
 
@@ -379,18 +418,20 @@ vim.api.nvim_create_autocmd("FileType", {
 	end,
 })
 
+-- BufRead patterns are filename globs, not filetypes. fswitch's own BufEnter
+-- defaults only apply when these are unset, so setting them here wins.
 vim.api.nvim_create_autocmd("BufRead", {
-	pattern = {"c", "cpp" },
+	pattern = { "*.c", "*.cpp" },
 	callback = function()
 		vim.b.fswitchlocs =  '.,../Inc,../include,../Include,../inc'
 		vim.b.fswitchdst = 'h,hpp'
 	end,
 })
 vim.api.nvim_create_autocmd("BufRead", {
-	pattern = {"h", "hpp" },
+	pattern = { "*.h", "*.hpp" },
 	callback = function()
 		vim.b.fswitchlocs =  '.,../Src,../source,../Source,../src'
-		vim.b.fswitchdst = 'h,hpp'
+		vim.b.fswitchdst = 'c,cpp'
 	end,
 })
 
