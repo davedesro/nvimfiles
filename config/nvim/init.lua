@@ -1,5 +1,5 @@
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.loop.fs_stat(lazypath) then
+if not vim.uv.fs_stat(lazypath) then
 	vim.fn.system({
 		"git",
 		"clone",
@@ -13,14 +13,13 @@ vim.opt.rtp:prepend(lazypath)
 vim.opt.clipboard = "unnamedplus"
 
 vim.g.mapleader = ","
-vim.g.gundo_prefer_python3 = 1
+
+-- Neovim detects *.h as filetype cpp, and that filetype is the LSP languageId,
+-- so without this clangd parses C headers as C++.
+vim.g.c_syntax_for_h = 1
 
 require("lazy").setup({
-	-- LSP (native Neovim 0.11+ configuration)
-	-- No plugin needed for basic LSP configuration
-	-- Autocompletion plugins
-	'hrsh7th/nvim-cmp',      -- Completion engine
-	'hrsh7th/cmp-nvim-lsp',  -- LSP source for nvim-cmp
+	-- Completion is mini.completion; LSP is configured natively below.
 	-- FZF and its integration plugin
 	{
 		"ibhagwan/fzf-lua",
@@ -44,13 +43,6 @@ require("lazy").setup({
 			{ "<c-\\>", "<cmd><C-U>TmuxNavigatePrevious<cr>" },
 		},
 	},
-	-- TMUX Clipboard
-	{
-		"roxma/vim-tmux-clipboard",
-	},
-	{
-		"mileszs/ack.vim"
-	},
 	{
 		"navarasu/onedark.nvim",
 		config = function()
@@ -62,6 +54,8 @@ require("lazy").setup({
 					["CursorLine"]   = {                bg = '#202020'               },
 					["Normal"]       = {                bg = '#000000'               },
 					["EndOfBuffer"]  = {                bg = '#000000'               },
+					["LineNr"]       = { fg = '#404040' },
+					["CursorLineNr"] = { fg = '#FFFF00' },
 					-- Dedicated to render-markdown code only (wired up in opts.code below)
 					["MdCodeBlock"]  = {                bg = '#1a1a1a' },
 					["MdCodeInline"] = { fg = '#E9C46A', bg = '#1a1a1a' }
@@ -105,7 +99,6 @@ require("lazy").setup({
 	{
 		"coder/claudecode.nvim",
 		dependencies = { "folke/snacks.nvim", },
-		config = true,
 		keys = {
 			{ "<leader>c", "<cmd>ClaudeCode --continue<cr>", desc = "Resume Claude", mode = { "n", "x" } },
 			{ "<C-x>",     "<cmd>ClaudeCode --continue<cr>", desc = "Resume Claude", mode = { "n", "x" } },
@@ -136,7 +129,7 @@ require("lazy").setup({
 						winhighlight = "Normal:ClaudeTermBg,NormalNC:ClaudeTermBg",
 					},
 					keys = {
-						claude_hide_ctrl = { "<C-x>", function(self) self:hide() end, mode = "t", desc = "Hide (Ctrl+,)" },
+						claude_hide_ctrl = { "<C-x>", function(self) self:hide() end, mode = "t", desc = "Hide (Ctrl+x)" },
 						claude_hide_esc = { "<C-\\><C-n>", function(self) self:hide() end, mode = "t", desc = "Hide (Ctrl+\\)" },
 						claude_nav_left  = { "<C-h>", function(self) self:hide(); vim.cmd("TmuxNavigateLeft")  end, mode = "t", desc = "Nav left" },
 						claude_nav_down  = { "<C-j>", function(self) self:hide(); vim.cmd("TmuxNavigateDown")  end, mode = "t", desc = "Nav down" },
@@ -148,9 +141,6 @@ require("lazy").setup({
 		},
 	},
 
-	-- Borders
-	{"vim-airline/vim-airline"},  -- The main vim-airline plugin
-	{"vim-airline/vim-airline-themes"},  -- Optional: for additional themes
 
 	-- History browsing
 	{ "mbbill/undotree" },
@@ -158,19 +148,15 @@ require("lazy").setup({
 	-- GIT
 	{"tpope/vim-fugitive"},
 
-	-- fast file switching
-	{ 'derekwyatt/vim-fswitch' },
-
-	-- CTag
-	{ 'yegappan/taglist' },
-
-	-- Surround
-	{ 'tpope/vim-surround' },
+	-- Surround, statusline, animation, minimap - the suite is already pulled in as
+	-- a render-markdown dependency, so declare it properly rather than relying on
+	-- that transitive load.
+	{ 'nvim-mini/mini.nvim' },
 })
 
 -- Native LSP configuration (Neovim 0.11+)
--- Get capabilities from nvim-cmp
-local capabilities = require('cmp_nvim_lsp').default_capabilities()
+-- Advertise mini.completion's capabilities to the server
+local capabilities = require('mini.completion').get_lsp_capabilities()
 
 vim.lsp.config.clangd = {
 	cmd = {
@@ -186,15 +172,72 @@ vim.lsp.config.clangd = {
 	root_markers = { ".git", "compile_commands.json" },
 }
 
--- Enable LSP for relevant filetypes
-vim.api.nvim_create_autocmd("FileType", {
-	pattern = { "c", "cpp", "objc", "objcpp" },
+-- vim.lsp.enable() installs its own FileType autocmd and gates on the filetypes
+-- list above, so one call is enough. Wrapping it in a FileType autocmd re-ran
+-- doautoall across every loaded buffer on each C/C++ file opened.
+vim.lsp.enable("clangd")
+
+-- Source/header switching through clangd's switchSourceHeader extension,
+-- replacing vim-fswitch. clangd resolves the pair from compile_commands.json, so
+-- layouts like Inc/ + Src/ work without maintaining a search-path list.
+vim.api.nvim_create_autocmd("LspAttach", {
 	callback = function(args)
-		vim.lsp.enable("clangd")
+		local client = vim.lsp.get_client_by_id(args.data.client_id)
+		if not client or client.name ~= "clangd" then return end
+		local function switch(split)
+			local params = vim.lsp.util.make_text_document_params(args.buf)
+			client:request("textDocument/switchSourceHeader", params, function(err, result)
+				if err then return vim.notify(tostring(err), vim.log.levels.ERROR) end
+				if not result or result == "" then
+					return vim.notify("No corresponding source/header", vim.log.levels.WARN)
+				end
+				if split then vim.cmd("vsplit") end
+				vim.cmd.edit(vim.uri_to_fname(result))
+			end, args.buf)
+		end
+		vim.keymap.set("n", "<leader>h", function() switch(false) end,
+			{ buffer = args.buf, silent = true, desc = "Switch source/header" })
+		vim.keymap.set("n", "<leader>H", function() switch(true) end,
+			{ buffer = args.buf, silent = true, desc = "Switch source/header (split)" })
 	end,
 })
 
-require('mini.animate').setup()
+-- The c/cpp parsers are installed but nothing started treesitter for them.
+-- foldmethod=syntax yields no folds once treesitter is the highlighter, hence
+-- the local foldexpr.
+vim.api.nvim_create_autocmd("FileType", {
+	pattern = { "c", "cpp" },
+	callback = function(args)
+		if vim.b[args.buf].large_file then return end
+		vim.treesitter.start()
+		vim.opt_local.foldmethod = "expr"
+		vim.opt_local.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+	end,
+})
+
+-- Cursor animation only. Scroll turns one <C-d> into up to 60 redraws ~4ms apart
+-- (expensive over tmux on WSL2) and resize fires on every tmux pane resize.
+require('mini.animate').setup({
+	scroll = { enable = false },
+	resize = { enable = false },
+	open   = { enable = false },
+	close  = { enable = false },
+})
+
+-- mini.surround with the documented vim-surround-compatible mappings, replacing
+-- tpope/vim-surround. Gains dot-repeat, which vim-surround only has via
+-- vim-repeat (never installed here).
+require('mini.surround').setup({
+	mappings = {
+		add = 'ys', delete = 'ds', replace = 'cs',
+		find = '', find_left = '', highlight = '',
+		suffix_last = '', suffix_next = '',
+	},
+	search_method = 'cover_or_next',
+})
+pcall(vim.keymap.del, 'x', 'ys')
+vim.keymap.set('x', 'S', [[:<C-u>lua MiniSurround.add('visual')<CR>]], { silent = true })
+vim.keymap.set('n', 'yss', 'ys_', { remap = true })
 local minimap = require('mini.map')
 minimap.setup({
 	integrations = {
@@ -235,36 +278,82 @@ vim.api.nvim_create_autocmd("FileType", {
 	end,
 })
 
-local cmp = require('cmp')
+-- mini.completion replaces nvim-cmp + cmp-nvim-lsp. The old <C-Space> (complete)
+-- and <C-f>/<C-b> (scroll docs) are mini's defaults, and <C-e> is Vim's built-in
+-- complete_CTRL-E. The 'buffer' and 'path' cmp sources were never registered
+-- (cmp-buffer/cmp-path are not installed); mini's fallback provides them for real,
+-- and adds signature help, which cmp needed another plugin for.
+require('mini.completion').setup()
 
-cmp.setup({
-	mapping = cmp.mapping.preset.insert({
-		['<C-b>'] = cmp.mapping.scroll_docs(-4),
-		['<C-f>'] = cmp.mapping.scroll_docs(4),
-		['<C-Space>'] = cmp.mapping.complete(),
-		['<C-e>'] = cmp.mapping.abort(),
-		['<CR>'] = cmp.mapping.confirm({ select = true }), -- Accept completion
-	}),
-	sources = cmp.config.sources({
-		{ name = 'nvim_lsp' },
-	}, {
-		{ name = 'buffer' },
-		{ name = 'path' },
-	})
+-- Enter confirms only an explicitly selected item. mini sets
+-- completeopt=menuone,noselect, so nothing is preselected and Enter inserts a
+-- newline rather than accepting a completion you never chose.
+vim.keymap.set('i', '<CR>', function()
+	if vim.fn.complete_info()['selected'] ~= -1 then return '\25' end -- <C-y>
+	return '\r'
+end, { expr = true, desc = 'Confirm selected completion, else newline' })
+
+-- mini.statusline replaces vim-airline + vim-airline-themes. The sections below
+-- reproduce the airline settings that lived here: filename only, no
+-- "utf-8[unix]" noise, and a %p%% / maxlinenr / colnr tail.
+
+-- airline's mixed-indent-file check has no equivalent anywhere in mini, so port
+-- it. Like airline's, it is cached per buffer and recomputed only on read/write/
+-- idle - a statusline component runs on every redraw, which this is far too
+-- expensive for.
+local function compute_mixed_indent(buf)
+	if vim.bo[buf].buftype ~= '' then return '' end
+	local n = vim.api.nvim_buf_line_count(buf)
+	if n > 20000 then return '' end   -- airline bails at the same size
+	local c_like = vim.tbl_contains(
+		{ 'c', 'cpp', 'objc', 'objcpp', 'java', 'javascript', 'arduino' }, vim.bo[buf].filetype)
+	local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+	local tab_line, spc_line
+	for i, l in ipairs(lines) do
+		-- tabs-then-spaces or spaces-then-tabs within one indent
+		if l:match('^\t+ +') or l:match('^ +\t+') then return ('[%d]mi'):format(i) end
+		if not tab_line and l:match('^\t') then tab_line = i end
+		-- in C-like files a leading ' *' is a doc-comment continuation, not an indent
+		if not spc_line and l:match('^ ') and not (c_like and l:match('^ +%*')) then
+			spc_line = i
+		end
+	end
+	if tab_line and spc_line then return ('[%d:%d]mi'):format(tab_line, spc_line) end
+	return ''
+end
+
+vim.api.nvim_create_autocmd({ 'BufReadPost', 'BufWritePost', 'CursorHold' }, {
+	group = vim.api.nvim_create_augroup('MixedIndentCheck', { clear = true }),
+	callback = function(args)
+		vim.b[args.buf].mixed_indent = compute_mixed_indent(args.buf)
+	end,
 })
 
--- Airline
-vim.cmd([[
-" let g:airline_theme='onedark'
-" let g:airline_experimental=1
-let g:airline_section_c_only_filename=1
-let g:airline_stl_path_style='short'
-let g:airline#parts#ffenc#skip_expected_string='utf-8[unix]'
-let g:airline#extensions#taglist#enabled=0
-let g:airline#extensions#whitespace#mixed_indent_format='[%s]mi'
-let g:airline#extensions#whitespace#symbol=''
-let g:airline_section_z=airline#section#create(['%p%%', 'maxlinenr', 'colnr'])
-]])
+local statusline = require('mini.statusline')
+statusline.setup({
+	content = {
+		active = function()
+			local mode, mode_hl = statusline.section_mode({ trunc_width = 120 })
+			local diagnostics = statusline.section_diagnostics({ trunc_width = 75 })
+			-- airline pulled the branch from fugitive; mini.statusline's own git
+			-- section needs mini.git or gitsigns, so read fugitive directly.
+			local git = vim.fn.exists('*FugitiveHead') == 1 and vim.fn.FugitiveHead(7) or ''
+			if git ~= '' then git = ' ' .. git end
+			local fileinfo = statusline.section_fileinfo({ trunc_width = 120 })
+			fileinfo = fileinfo:gsub('%s*utf%-8%[unix%]', '')  -- airline's skip_expected_string
+			return statusline.combine_groups({
+				{ hl = mode_hl,                  strings = { mode } },
+				{ hl = 'MiniStatuslineDevinfo',  strings = { git, diagnostics } },
+				'%<',
+				{ hl = 'MiniStatuslineFilename', strings = { '%t%m%r' } },
+				'%=',
+				{ hl = 'MiniStatuslineDevinfo',  strings = { vim.b.mixed_indent or '' } },
+				{ hl = 'MiniStatuslineFileinfo', strings = { fileinfo } },
+				{ hl = mode_hl,                  strings = { '%p%%', '%L', '%2v' } },
+			})
+		end,
+	},
+})
 
 local fzf = require('fzf-lua')
 fzf.setup({
@@ -298,6 +387,8 @@ end, { noremap = true, silent = true, desc = 'Search workspace symbols.' })
 vim.keymap.set('n', '<leader>f', fzf.files, { desc = 'Find Files' })
 -- Fuzzy search of OPEN BUFFERS is ',b'
 vim.keymap.set('n', '<leader>b', fzf.buffers, { desc = 'Switch Buffers' })
+-- Document symbols, replacing the taglist window (which was never bound anyway)
+vim.keymap.set('n', '<leader>o', fzf.lsp_document_symbols, { desc = 'Document Symbols' })
 
 vim.keymap.set('n', '<leader>pwd', function()
     print(vim.fn.expand('%:p:h'))
@@ -313,69 +404,107 @@ vim.keymap.set('n', '<leader>g', function()
 	fzf.live_grep({ search = cword })
 end, { desc = 'Grep word under cursor' })
 
+-- ack.vim was a thin wrapper that swapped 'grepprg' and ran :lgrep, so use the
+-- native commands directly. grepformat already matches rg --vimgrep output.
+vim.o.grepprg = 'rg --vimgrep'
+vim.o.grepformat = '%f:%l:%c:%m'
+
 -- List of matches considering .gitignore in a persistent buffer
 vim.keymap.set('n', '<leader>a', function()
-	vim.g.ackprg = 'rg --vimgrep'
-	vim.api.nvim_feedkeys(":LAck! ", "n", false)
-end)
+	vim.o.grepprg = 'rg --vimgrep'
+	vim.api.nvim_feedkeys(':lgrep! ', 'n', false)
+end, { desc = 'Grep (respects .gitignore)' })
 
 -- List of matches of all files in the directory tree in a persistent buffer
 vim.keymap.set('n', '<leader>e', function()
-	vim.g.ackprg = 'rg --vimgrep --no-ignore'
-	vim.api.nvim_feedkeys(":LAck! ", "n", false)
-end)
+	vim.o.grepprg = 'rg --vimgrep --no-ignore'
+	vim.api.nvim_feedkeys(':lgrep! ', 'n', false)
+end, { desc = 'Grep (all files)' })
 
-vim.keymap.set('n', '<C-f>', function()
-	vim.lsp.buf.code_action({
-		apply = true, -- Automatically apply the first code action
-	})
-end, { desc = "Auto Fix Code Action" })
+-- Open the result window automatically once the grep finishes.
+vim.api.nvim_create_autocmd('QuickFixCmdPost', { pattern = 'l*',     command = 'botright lwindow' })
+vim.api.nvim_create_autocmd('QuickFixCmdPost', { pattern = '[^l]*',  command = 'botright cwindow' })
+
+-- ack.vim's result-window mappings, ported so the list still feels the same.
+vim.api.nvim_create_autocmd('FileType', {
+	pattern = 'qf',
+	callback = function(args)
+		local function m(lhs, rhs, desc)
+			vim.keymap.set('n', lhs, rhs, { buffer = args.buf, silent = true, desc = desc })
+		end
+		m('o',  '<CR>',            'Open')
+		m('go', '<CR><C-w>p',      'Open, keep focus on the list')
+		m('t',  '<C-w><CR><C-w>T', 'Open in a new tab')
+		m('v',  '<C-w><CR><C-w>H', 'Open in a vertical split')
+		m('q',  '<Cmd>close<CR>',  'Close the list')
+	end,
+})
+
+-- Code actions are on the built-in `gra`, which Nvim 0.12 maps unconditionally
+-- (:h lsp-defaults), so <C-f> stays page-forward.
 
 -- Use space bar to fold code
 vim.keymap.set('n', '<Space>',   'za',              { silent = true })
--- Clear existing string search when hitting enter
-vim.keymap.set('n', '<CR>',      ':nohlsearch<cr>', { silent = true })
+-- Clear the search highlight with <CR>, but leave it alone where it already has a
+-- job to do: quickfix/loclist jumps and the command-line window.
+vim.keymap.set('n', '<CR>', function()
+	if vim.bo.buftype == 'quickfix' or vim.fn.getcmdwintype() ~= '' then return '<CR>' end
+	return '<Cmd>nohlsearch<CR>'
+end, { expr = true, silent = true, desc = 'Clear search highlight' })
 -- Toggle to the previous buffer
 vim.keymap.set('n', '<leader><leader>', '<c-^>',    { silent = true })
--- Don't allow arrows when in normal mode
-vim.keymap.set('n', '<Left>',  ':echo "no!"<cr>',   { silent = true})
-vim.keymap.set('n', '<Right>', ':echo "no!"<cr>',   { silent = true})
-vim.keymap.set('n', '<Up>',    ':echo "no!"<cr>',   { silent = true})
-vim.keymap.set('n', '<Down>',  ':echo "no!"<cr>',   { silent = true})
+-- Break the arrow-key habit. <Nop> rather than :echo, which clobbered the message
+-- line and could trigger a hit-enter prompt.
+for _, key in ipairs({ '<Left>', '<Right>', '<Up>', '<Down>' }) do
+	vim.keymap.set({ 'n', 'v', 'i' }, key, '<Nop>')
+end
 -- Undotree
 vim.keymap.set('n', '<F5>', vim.cmd.UndotreeToggle)
 -- Kill buffer and go back to previous buffer
 vim.keymap.set('n', '<leader>d', ':b#<bar>bd#<CR>', { silent = true})
 
--- Show clangd errors in full
+-- 0.12 shows no inline diagnostic text by default, so surface clangd messages in
+-- a float on idle. Skip special buffers (quickfix, terminals, the Claude float).
+vim.diagnostic.config({
+	float = { focusable = false, border = "rounded", source = true, prefix = "" },
+})
 vim.api.nvim_create_autocmd("CursorHold", {
-  callback = function()
-    local opts = {
-      focusable = false,
-      border = "rounded",
-      source = "always",
-      prefix = "",
-    }
-    vim.diagnostic.open_float(nil, opts)
-  end,
+	callback = function(args)
+		if vim.bo[args.buf].buftype ~= "" then return end
+		vim.diagnostic.open_float({ scope = "cursor" })
+	end,
 })
 
--- Enable dts syntax
-vim.api.nvim_create_autocmd({"BufRead", "BufNewFile"}, {
-	pattern = {"*.dts", "*.dtsi", "*.overlay"},
+-- *.dts/*.dtsi/*.overlay already resolve to filetype "dts" natively; only the
+-- fold style is ours.
+vim.api.nvim_create_autocmd("FileType", {
+	pattern = "dts",
 	callback = function()
-		vim.bo.filetype = "dts"
 		vim.opt_local.foldmethod = "indent"
 	end,
 })
 
--- turn syntax off for large files
-vim.api.nvim_create_autocmd("BufWinEnter", {
-	pattern = "*",
-	callback = function()
-		if vim.fn.line2byte(vim.fn.line("$") + 1) > 400000 then
-			vim.cmd("syntax clear")
-		end
+-- Keep very large files responsive. BufReadPre plus a real stat beats BufWinEnter
+-- plus line2byte: it runs once per file instead of on every window entry.
+vim.api.nvim_create_autocmd("BufReadPre", {
+	callback = function(args)
+		local ok, st = pcall(vim.uv.fs_stat, args.match)
+		if not (ok and st and st.size > 400000) then return end
+		vim.b[args.buf].large_file = true
+		vim.bo[args.buf].undofile = false
+	end,
+})
+
+-- Filetype detection switches syntax back on after BufReadPre, so the
+-- highlighters have to be disabled here, once the filetype is known.
+vim.api.nvim_create_autocmd("FileType", {
+	callback = function(args)
+		if not vim.b[args.buf].large_file then return end
+		vim.schedule(function()
+			if not vim.api.nvim_buf_is_valid(args.buf) then return end
+			vim.bo[args.buf].syntax = "off"
+			pcall(vim.treesitter.stop, args.buf)
+		end)
 	end,
 })
 
@@ -385,25 +514,42 @@ vim.api.nvim_create_autocmd("FileType", {
 	callback = function(args)
 		vim.opt_local.wrap = false
 		vim.opt_local.colorcolumn = "80"
-		local found = vim.fs.find(".clang-format", { upward = true, path = vim.fn.expand("%:p:h") })[1]
 		local bo = vim.bo[args.buf]
-		if not found then
-			bo.tabstop = 4
-			bo.shiftwidth = 4
-			bo.softtabstop = 4
-			bo.expandtab = true
-		else
-			for line in io.lines(found) do
-				local k, v = line:match("^%s*([%w]+)%s*:%s*(.-)%s*$")
-				if k == "IndentWidth"     then bo.shiftwidth = tonumber(v);bo.softtabstop = tonumber(v)
-				elseif k == "TabWidth"    then bo.tabstop = tonumber(v)
-				elseif k == "UseTab"      then bo.expandtab = (v == "Never")
-				elseif k == "ColumnLimit" then vim.opt_local.textwidth = tonumber(v)
+		-- Defaults first, then let .clang-format override only what it actually sets.
+		bo.tabstop, bo.shiftwidth, bo.softtabstop, bo.expandtab = 4, 4, 4, true
+
+		local found = vim.fs.find(".clang-format", { upward = true, path = vim.fn.expand("%:p:h") })[1]
+		local fh = found and io.open(found, "r")
+		if fh then
+			-- A .clang-format may hold several "---"-separated documents, one per
+			-- Language; only the C/C++ one applies here.
+			local applies = true
+			for line in fh:lines() do
+				if line:match("^%-%-%-") then
+					applies = true       -- new document: ours until a Language says otherwise
+				elseif line:match("^%.%.%.") then
+					applies = false
+				else
+					-- Top-level keys only (no leading whitespace, so nested blocks are
+					-- skipped), and trailing "# comments" stripped off the value.
+					local k, v = line:match("^([%w]+)%s*:%s*([^#]*)")
+					if k then
+						v = v:gsub("%s+$", "")
+						if k == "Language" then
+							applies = (v == "Cpp" or v == "ObjC")
+						elseif applies then
+							local n = tonumber(v)
+							if     k == "IndentWidth" and n then bo.shiftwidth, bo.softtabstop = n, n
+							elseif k == "TabWidth"    and n then bo.tabstop = n
+							elseif k == "UseTab"            then bo.expandtab = (v == "Never")
+							elseif k == "ColumnLimit" and n then bo.textwidth = n
+							end
+						end
+					end
 				end
 			end
+			fh:close()
 		end
-		vim.keymap.set('n', '<leader>h', ':FSHere<CR>',       { silent = true, buffer = args.buf })
-		vim.keymap.set('n', '<leader>H', ':FSSplitRight<CR>', { silent = true, buffer = args.buf })
 	end,
 })
 
@@ -418,63 +564,35 @@ vim.api.nvim_create_autocmd("FileType", {
 	end,
 })
 
--- BufRead patterns are filename globs, not filetypes. fswitch's own BufEnter
--- defaults only apply when these are unset, so setting them here wins.
-vim.api.nvim_create_autocmd("BufRead", {
-	pattern = { "*.c", "*.cpp" },
-	callback = function()
-		vim.b.fswitchlocs =  '.,../Inc,../include,../Include,../inc'
-		vim.b.fswitchdst = 'h,hpp'
-	end,
-})
-vim.api.nvim_create_autocmd("BufRead", {
-	pattern = { "*.h", "*.hpp" },
-	callback = function()
-		vim.b.fswitchlocs =  '.,../Src,../source,../Source,../src'
-		vim.b.fswitchdst = 'c,cpp'
-	end,
-})
 
 local function set_claude_term_bg()
 	vim.api.nvim_set_hl(0, "ClaudeTermBg", { bg = "#000044" })
 end
 set_claude_term_bg()
 vim.api.nvim_create_autocmd("ColorScheme", { callback = set_claude_term_bg })
--- Change the color of line numbers
-vim.api.nvim_set_hl(0, 'LineNr', { fg = '#404040' })  -- Regular line numbers (gray)
-vim.api.nvim_set_hl(0, 'CursorLineNr', { fg = '#FFFF00' })  -- Current line number (yellow)
 
-vim.o.termguicolors  = true        -- Use terminal colors
 vim.o.background     = "dark"      -- Dark theme
 vim.o.number         = true        -- Add absolute line number on the left side of code
 vim.o.cursorline     = true        -- Show the cursor position all the time
-vim.o.shell          = "bash"      -- avoids munging PATH under zsh
-vim.o.autoread       = true        -- Automatically read files when changed outside of Neovim
+vim.o.shell          = "bash"      -- run :! and system() under bash regardless of $SHELL
 vim.o.ignorecase     = true        -- searches are case insensitive...
 vim.o.smartcase      = true        -- ... unless they contain at least one capital letter
-vim.o.hlsearch       = true        -- highlight searches
-vim.o.incsearch      = true        -- incremental searching
 vim.o.wrap           = false       -- don't wrap lines
 vim.o.tabstop        = 4           -- Tab size
 vim.o.shiftwidth     = 4           -- an autoindent (with <<) size
 vim.o.expandtab      = true        -- use spaces by default, not tabs
 vim.o.list           = true        -- Show invisible characters
-vim.o.backspace      = "indent,eol,start" -- backspace through everything in insert mode
-vim.o.joinspaces     = false       -- Use only 1 space after "." when joining lines, not 2
 vim.o.undofile       = true          -- Save the undo history
 vim.o.autowrite      = true          -- Write the contents of the file on buffer switching
 vim.o.scrolloff      = 3            -- Set context as we're scrolling
-vim.o.splitright     = true        -- When splitting, move cursor to new window
-vim.o.splitbelow     = true        -- When splitting, move cursor to new window
+vim.o.splitright     = true        -- vertical splits open to the right, not left
+vim.o.splitbelow     = true        -- horizontal splits open below, not above
 vim.o.foldmethod     = 'syntax'    -- Default code folding to syntax
 vim.o.foldlevelstart = 99      -- Do not fold when file is originally open
-vim.o.tags           = ".tags"
+vim.o.tags           = "./.tags;,.tags"  -- ";" = keep searching upward to root
 vim.o.signcolumn     = 'yes'       -- Keep clangd sign column visible even when in editing mode
-vim.o.updatetime     = 2500        -- 1.0 seconds before floating window appears showing diagnostics
+vim.o.updatetime     = 2500        -- 2.5 seconds before the diagnostic float appears
 
-vim.g.autotagTagsFile=".tags"
-vim.g.autotagmaxTagsFileSize="1000000000"
-vim.g.vim_tmux_clipboard_loadb_option = '-w'
 
 -- show when tabs exists
 -- show when trailing spaces exist
@@ -483,31 +601,56 @@ vim.g.vim_tmux_clipboard_loadb_option = '-w'
 vim.o.listchars = "tab:»·,trail:◘,extends:>,precedes:<"
 
 
-_G.LRefreshTags = function()
-	local cwd = vim.fn.getcwd()
-	local cmd = "rm -f " .. vim.o.tags .. "; ctags -R -f " .. cwd .. "/.tags *"
-	local resp = vim.fn.system(cmd)
-end
-vim.api.nvim_create_user_command('LRefreshTags', LRefreshTags, { bang = true, nargs = '*' })
+-- Regenerate ctags for the current directory. Kept for the trees clangd does not
+-- cover (devicetree, Kconfig, Makefiles); C/C++ tag jumps go through the LSP
+-- tagfunc instead.
+vim.api.nvim_create_user_command('LRefreshTags', function()
+	local dir = vim.fn.getcwd()
+	local tagfile = dir .. '/.tags'
+	vim.fn.delete(tagfile)
+	-- List form runs without a shell: no glob, no quoting bugs, and dotfiles are
+	-- included (the old trailing "*" silently skipped them).
+	local out = vim.fn.system({ 'ctags', '-R', '--exclude=.git', '-f', tagfile, dir })
+	if vim.v.shell_error ~= 0 then
+		vim.notify('ctags failed: ' .. out, vim.log.levels.ERROR)
+	else
+		vim.notify('Wrote ' .. tagfile)
+	end
+end, { desc = 'Regenerate .tags for the current directory' })
 
--- Repo-wide search and replace using args/argdo
+-- Repo-wide search and replace using args/argdo.
+-- Fixed-string grep (-F) plus \V very-nomagic keep the file list and the
+-- substitution in exact agreement, so a search containing . * [ ] ~ $ ^ matches
+-- itself instead of being read as a regex.
 vim.keymap.set('n', '<leader>R', function()
 	local search = vim.fn.input('Search: ')
 	if search == '' then return end
-	local replace = vim.fn.input('Replace with: ')
-	if replace == '' then return end
+	local replace = vim.fn.input({ prompt = 'Replace with: ', cancelreturn = vim.NIL })
+	if replace == vim.NIL then return end -- empty replacement is legitimate (deletion)
 
-	-- Escape special characters for grep and vim regex
-	local grep_search = vim.fn.shellescape(search)
-	local vim_search = vim.fn.escape(search, '/\\')
-	local vim_replace = vim.fn.escape(replace, '/\\&')
+	local files = vim.fn.systemlist({ 'git', 'grep', '--untracked', '-lF', '--', search })
+	if vim.v.shell_error > 1 then     -- 1 just means "no matches"
+		vim.notify('git grep failed (not a repository?)', vim.log.levels.ERROR)
+		return
+	end
+	if #files == 0 then
+		vim.notify('No matches for ' .. vim.inspect(search), vim.log.levels.WARN)
+		return
+	end
 
-	-- Build and execute the commands (git grep respects .gitignore)
-	local args_cmd = 'args `git grep -l ' .. grep_search .. '`'
-	local argdo_cmd = 'argdo %s/' .. vim_search .. '/' .. vim_replace .. '/g | update'
+	-- Under \V only a backslash stays special; / needs escaping as the separator.
+	local pat = vim.fn.escape(search, '\\/')
+	local rep = vim.fn.escape(replace, '\\/&~')
 
-	vim.cmd(args_cmd)
-	vim.cmd(argdo_cmd)
-	print('Replaced "' .. search .. '" with "' .. replace .. '"')
+	if vim.fn.argc() > 0 then vim.cmd('argdelete *') end
+	vim.cmd('argadd ' .. table.concat(vim.tbl_map(vim.fn.fnameescape, files), ' '))
+
+	-- The e flag keeps the first non-matching file from aborting the whole argdo.
+	local ok, err = pcall(vim.cmd,
+		('argdo %%s/\\V%s/%s/ge | if &modified | update | endif'):format(pat, rep))
+	if not ok then
+		vim.notify('argdo failed: ' .. tostring(err), vim.log.levels.ERROR)
+		return
+	end
+	vim.notify(('Replaced %q with %q across %d file(s)'):format(search, replace, #files))
 end, { desc = 'Repo-wide search and replace' })
-
