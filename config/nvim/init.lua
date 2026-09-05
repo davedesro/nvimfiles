@@ -415,25 +415,36 @@ vim.o.grepformat = '%f:%l:%c:%m'
 -- A typed pattern is passed through verbatim so it behaves exactly like
 -- :lgrep! would, regex and all; only the empty case is intercepted.
 vim.api.nvim_create_user_command('LGrep', function(opts)
+	local pattern
 	if opts.args ~= '' then
 		-- Pass a typed pattern through verbatim, so this behaves exactly like
 		-- :lgrep! -- rg flags and extra path arguments keep working.
-		vim.cmd('lgrep! ' .. opts.args)
-		return
+		vim.cmd('silent lgrep! ' .. opts.args)
+		pattern = opts.args
+	else
+		local cword = vim.fn.expand('<cword>')
+		if cword == '' then
+			vim.notify('No word under the cursor', vim.log.levels.WARN)
+			return
+		end
+		-- ack.vim used the bare cword, so substring match, not whole-word. grepprg
+		-- runs through a shell, so shellescape it; the structured form with
+		-- magic.file=false then keeps Vim from expanding % or # inside it.
+		vim.cmd({
+			cmd = 'lgrep', bang = true,
+			args = { vim.fn.shellescape(cword) },
+			mods = { silent = true },
+			magic = { file = false, bar = false },
+		})
+		pattern = cword
 	end
-	local cword = vim.fn.expand('<cword>')
-	if cword == '' then
-		vim.notify('No word under the cursor', vim.log.levels.WARN)
-		return
+	-- 'silent' above is what removes the hit-enter prompt: without it Vim echoes
+	-- the :!rg line and every match, overflowing the message area so the list only
+	-- appears after an extra Enter. It also hides the no-match feedback, and
+	-- lwindow will not open an empty list, so report that case explicitly.
+	if vim.tbl_isempty(vim.fn.getloclist(0)) then
+		vim.notify('No matches for ' .. pattern, vim.log.levels.WARN)
 	end
-	-- ack.vim used the bare cword, so substring match, not whole-word. grepprg is
-	-- run through a shell, so shellescape it; the structured form with
-	-- magic.file=false then keeps Vim from expanding % or # inside it.
-	vim.cmd({
-		cmd = 'lgrep', bang = true,
-		args = { vim.fn.shellescape(cword) },
-		magic = { file = false, bar = false },
-	})
 end, { nargs = '*', complete = 'file', desc = 'Grep into the location list (cword when empty)' })
 
 -- List of matches considering .gitignore in a persistent buffer
