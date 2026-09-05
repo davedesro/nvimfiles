@@ -409,17 +409,44 @@ end, { desc = 'Grep word under cursor' })
 vim.o.grepprg = 'rg --vimgrep'
 vim.o.grepformat = '%f:%l:%c:%m'
 
+-- ack.vim searched the word under the cursor when given no pattern
+-- (g:ack_use_cword_for_empty_search), so <leader>a followed straight by Enter
+-- just worked. :lgrep has no such behaviour, hence this wrapper.
+-- A typed pattern is passed through verbatim so it behaves exactly like
+-- :lgrep! would, regex and all; only the empty case is intercepted.
+vim.api.nvim_create_user_command('LGrep', function(opts)
+	if opts.args ~= '' then
+		-- Pass a typed pattern through verbatim, so this behaves exactly like
+		-- :lgrep! -- rg flags and extra path arguments keep working.
+		vim.cmd('lgrep! ' .. opts.args)
+		return
+	end
+	local cword = vim.fn.expand('<cword>')
+	if cword == '' then
+		vim.notify('No word under the cursor', vim.log.levels.WARN)
+		return
+	end
+	-- ack.vim used the bare cword, so substring match, not whole-word. grepprg is
+	-- run through a shell, so shellescape it; the structured form with
+	-- magic.file=false then keeps Vim from expanding % or # inside it.
+	vim.cmd({
+		cmd = 'lgrep', bang = true,
+		args = { vim.fn.shellescape(cword) },
+		magic = { file = false, bar = false },
+	})
+end, { nargs = '*', complete = 'file', desc = 'Grep into the location list (cword when empty)' })
+
 -- List of matches considering .gitignore in a persistent buffer
 vim.keymap.set('n', '<leader>a', function()
 	vim.o.grepprg = 'rg --vimgrep'
-	vim.api.nvim_feedkeys(':lgrep! ', 'n', false)
-end, { desc = 'Grep (respects .gitignore)' })
+	vim.api.nvim_feedkeys(':LGrep ', 'n', false)
+end, { desc = 'Grep (respects .gitignore, cword if empty)' })
 
 -- List of matches of all files in the directory tree in a persistent buffer
 vim.keymap.set('n', '<leader>e', function()
 	vim.o.grepprg = 'rg --vimgrep --no-ignore'
-	vim.api.nvim_feedkeys(':lgrep! ', 'n', false)
-end, { desc = 'Grep (all files)' })
+	vim.api.nvim_feedkeys(':LGrep ', 'n', false)
+end, { desc = 'Grep (all files, cword if empty)' })
 
 -- Open the result window automatically once the grep finishes.
 vim.api.nvim_create_autocmd('QuickFixCmdPost', { pattern = 'l*',     command = 'botright lwindow' })
