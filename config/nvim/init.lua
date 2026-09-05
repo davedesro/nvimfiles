@@ -61,11 +61,32 @@ require("lazy").setup({
 					["Folded"]       = {fg = '#FFFF00', bg = '$black', fmt = 'bold'  },
 					["CursorLine"]   = {                bg = '#202020'               },
 					["Normal"]       = {                bg = '#000000'               },
-					["EndOfBuffer"]  = {                bg = '#000000'               }
+					["EndOfBuffer"]  = {                bg = '#000000'               },
+					-- Dedicated to render-markdown code only (wired up in opts.code below)
+					["MdCodeBlock"]  = { fg = '#DD9900', bg = 'none' },
+					["MdCodeInline"] = { fg = '#DD9900', bg = 'none' }
 				}
 			})
 			require("onedark").load()
 		end,
+	},
+	-- View Markdown files
+	{
+		'MeanderingProgrammer/render-markdown.nvim',
+		dependencies = { 'nvim-treesitter/nvim-treesitter', 'nvim-mini/mini.nvim' },            -- if you use the mini.nvim suite
+		-- dependencies = { 'nvim-treesitter/nvim-treesitter', 'nvim-mini/mini.icons' },        -- if you use standalone mini plugins
+		-- dependencies = { 'nvim-treesitter/nvim-treesitter', 'nvim-tree/nvim-web-devicons' }, -- if you prefer nvim-web-devicons
+		---@module 'render-markdown'
+		---@type render.md.UserConfig
+		opts = {
+			code = {
+				-- MdCodeBlock / MdCodeInline are defined in the onedark highlights table above
+				highlight        = 'MdCodeBlock',  -- fenced block body
+				highlight_inline = 'MdCodeInline', -- `inline code`
+				highlight_border = 'MdCodeBlock',  -- language label row (false = keep icon color)
+				highlight_info   = 'MdCodeBlock',  -- info string after the language
+			},
+		},
 	},
 	{
 		"coder/claudecode.nvim",
@@ -303,21 +324,45 @@ vim.api.nvim_create_autocmd("BufWinEnter", {
 	end,
 })
 
--- Set C defaults
 vim.api.nvim_create_autocmd("FileType", {
-	pattern = {"c", "cpp" },
-	callback = function()
+	pattern = { "c", "cpp", "h", "hpp" },
+	callback = function(args)
 		vim.opt_local.wrap = false
-		vim.opt_local.tabstop = 4
-		vim.opt_local.shiftwidth = 4
-		vim.opt_local.softtabstop = 4
-		vim.opt_local.expandtab = true
 		vim.opt_local.colorcolumn = "80"
-
+		local found = vim.fs.find(".clang-format", { upward = true, path = vim.fn.expand("%:p:h") })[1]
+		local bo = vim.bo[args.buf]
+		if not found then
+			bo.tabstop = 4
+			bo.shiftwidth = 4
+			bo.softtabstop = 4
+			bo.expandtab = true
+			return
+		else
+			for line in io.lines(found) do
+				local k, v = line:match("^%s*([%w]+)%s*:%s*(.-)%s*$")
+				if k == "IndentWidth"     then bo.shiftwidth = tonumber(v);bo.softtabstop = tonumber(v)
+				elseif k == "TabWidth"    then bo.tabstop = tonumber(v)
+				elseif k == "UseTab"      then bo.expandtab = (v == "Never")
+				elseif k == "ColumnLimit" then vim.opt_local.textwidth = tonumber(v)
+				end
+			end
+		end
 		vim.keymap.set('n', '<leader>h', ':FSHere<CR>',       { silent = true })
 		vim.keymap.set('n', '<leader>H', ':FSSplitRight<CR>', { silent = true })
 	end,
 })
+
+
+local md_group = vim.api.nvim_create_augroup("MarkdownSettings", { clear = true })
+vim.api.nvim_create_autocmd("FileType", {
+	group = md_group,
+	pattern = "markdown",
+	callback = function()
+		vim.opt_local.textwidth = 80
+		vim.opt_local.formatoptions:append("t")
+	end,
+})
+
 vim.api.nvim_create_autocmd("BufRead", {
 	pattern = {"c", "cpp" },
 	callback = function()
@@ -334,7 +379,7 @@ vim.api.nvim_create_autocmd("BufRead", {
 })
 
 local function set_claude_term_bg()
-	vim.api.nvim_set_hl(0, "ClaudeTermBg", { bg = "#00005f" })
+	vim.api.nvim_set_hl(0, "ClaudeTermBg", { bg = "#000044" })
 end
 set_claude_term_bg()
 vim.api.nvim_create_autocmd("ColorScheme", { callback = set_claude_term_bg })
