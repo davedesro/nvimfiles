@@ -238,6 +238,24 @@ require('mini.surround').setup({
 pcall(vim.keymap.del, 'x', 'ys')
 vim.keymap.set('x', 'S', [[:<C-u>lua MiniSurround.add('visual')<CR>]], { silent = true })
 vim.keymap.set('n', 'yss', 'ys_', { remap = true })
+-- Highlight the other occurrences of the word under the cursor. mini's default
+-- is an underline; use the cursorline background instead so matches read as
+-- though they were sitting on the cursor's own row.
+require('mini.cursorword').setup()
+
+local function set_cursorword_hl()
+	local cursorline = vim.api.nvim_get_hl(0, { name = 'CursorLine', link = false })
+	-- Without a cursorline background there is nothing to copy, and a bg-less
+	-- highlight would be invisible, so leave mini's default alone.
+	if not cursorline.bg then return end
+	vim.api.nvim_set_hl(0, 'MiniCursorword', { bg = cursorline.bg, underline = false })
+	-- The word actually under the cursor already sits on the cursorline, so leave
+	-- it unhighlighted and every occurrence ends up looking identical.
+	vim.api.nvim_set_hl(0, 'MiniCursorwordCurrent', {})
+end
+set_cursorword_hl()
+vim.api.nvim_create_autocmd('ColorScheme', { callback = set_cursorword_hl })
+
 local minimap = require('mini.map')
 minimap.setup({
 	integrations = {
