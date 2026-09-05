@@ -275,6 +275,36 @@ minimap.setup({
 	-- window defaults are already side='right', width=10, winblend=25
 })
 
+-- Encoded blocks carry no highlight of their own, so they render in
+-- MiniMapNormal, which links to NormalFloat, which has no foreground and so
+-- falls back to Normal's - the map ends up as bright as the buffer text it
+-- stands for. Mix that foreground partway into the float's background instead:
+-- same hue, just dimmed, which no fixed grey can promise (onedark's LineNr, for
+-- one, is darker than NormalFloat's background and would leave the map
+-- invisible). The scrollbar keeps its brighter Title/Delimiter colors and now
+-- reads clearly against the dimmed blocks. Raise minimap_dim toward 1 for a
+-- darker map; note 'winblend' is 25, which dims it further again.
+local minimap_dim = 0.5
+
+local function set_minimap_hl()
+	local float  = vim.api.nvim_get_hl(0, { name = 'NormalFloat', link = false })
+	local normal = vim.api.nvim_get_hl(0, { name = 'Normal',      link = false })
+	local fg, bg = float.fg or normal.fg, float.bg or normal.bg
+	-- Nothing to mix, so leave mini's default link alone rather than blanking it.
+	if not (fg and bg) then return end
+	local dimmed = 0
+	for _, channel in ipairs({ 65536, 256, 1 }) do
+		local a, b = math.floor(fg / channel) % 256, math.floor(bg / channel) % 256
+		dimmed = dimmed + math.floor(a + (b - a) * minimap_dim + 0.5) * channel
+	end
+	-- bg is passed through explicitly: the map window sets
+	-- winhighlight=NormalFloat:MiniMapNormal, so omitting it would drop the
+	-- float's own background.
+	vim.api.nvim_set_hl(0, 'MiniMapNormal', { fg = dimmed, bg = float.bg })
+end
+set_minimap_hl()
+vim.api.nvim_create_autocmd('ColorScheme', { callback = set_minimap_hl })
+
 vim.keymap.set('n', '<leader>mm', minimap.toggle,       { desc = 'Toggle minimap' })
 vim.keymap.set('n', '<leader>ms', minimap.toggle_side,  { desc = 'Toggle minimap side' })
 vim.keymap.set('n', '<leader>mf', minimap.toggle_focus, { desc = 'Focus minimap' })
