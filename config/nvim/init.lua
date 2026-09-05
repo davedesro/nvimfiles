@@ -63,11 +63,25 @@ require("lazy").setup({
 					["Normal"]       = {                bg = '#000000'               },
 					["EndOfBuffer"]  = {                bg = '#000000'               },
 					-- Dedicated to render-markdown code only (wired up in opts.code below)
-					["MdCodeBlock"]  = { fg = '#DD9900', bg = 'none' },
-					["MdCodeInline"] = { fg = '#DD9900', bg = 'none' }
+					["MdCodeBlock"]  = {                bg = '#1a1a1a' },
+					["MdCodeInline"] = { fg = '#E9C46A', bg = '#1a1a1a' }
 				}
 			})
 			require("onedark").load()
+		end,
+	},
+	-- Treesitter parsers (main branch installs nothing by default; needs the
+	-- tree-sitter CLI on PATH). Drives syntax highlighting inside markdown fences.
+	{
+		'nvim-treesitter/nvim-treesitter',
+		branch = 'main',
+		lazy = false,
+		build = ':TSUpdate',
+		config = function()
+			require('nvim-treesitter').install({
+				'bash', 'c', 'cpp', 'json', 'lua', 'markdown', 'markdown_inline',
+				'python', 'toml', 'vim', 'vimdoc', 'yaml',
+			})
 		end,
 	},
 	-- View Markdown files
@@ -179,6 +193,8 @@ vim.api.nvim_create_autocmd("FileType", {
 		vim.lsp.enable("clangd")
 	end,
 })
+
+require('mini.animate').setup()
 
 local cmp = require('cmp')
 
