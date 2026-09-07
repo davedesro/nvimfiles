@@ -333,13 +333,39 @@ vim.api.nvim_create_autocmd("FileType", {
 -- and adds signature help, which cmp needed another plugin for.
 require('mini.completion').setup()
 
--- Enter confirms only an explicitly selected item. mini sets
--- completeopt=menuone,noselect, so nothing is preselected and Enter inserts a
--- newline rather than accepting a completion you never chose.
+-- <Tab> confirms the completion: the highlighted item, or the top one when mini's
+-- completeopt=menuone,noselect has left nothing highlighted. That is what cmp's
+-- confirm({ select = true }) did on <CR>, just moved off Enter.
+-- Nvim 0.11+ owns <Tab> in insert mode for snippet tabstop jumps (:h vim.snippet),
+-- and clangd hands back snippets for anything with arguments, so that branch has to
+-- be carried over here or the jump to the next argument stops working.
+vim.keymap.set('i', '<Tab>', function()
+	if vim.fn.pumvisible() == 1 then
+		-- <C-n> first when nothing is highlighted: under noselect a bare <C-y>
+		-- confirms nothing and just closes the menu.
+		if vim.fn.complete_info({ 'selected' }).selected ~= -1 then return '<C-y>' end
+		return '<C-n><C-y>'
+	end
+	if vim.snippet.active({ direction = 1 }) then return '<Cmd>lua vim.snippet.jump(1)<CR>' end
+	return '<Tab>'
+end, { expr = true, desc = 'Confirm completion / snippet tabstop, else tab' })
+
+-- ...which leaves Enter as nothing but a newline: the popup otherwise swallows <CR>
+-- to accept the highlighted match (:h popupmenu-keys), so stop completion first.
+-- <C-x><C-z> rather than <C-e>, because <C-e> ends completion by going "back to what
+-- was there before selecting a match" - which would silently throw away a candidate
+-- that <C-n>/<C-p> had already inserted, mini's documented way of picking one.
+-- <C-x><C-z> stops completion without touching the text (:h i_CTRL-X_CTRL-Z), so the
+-- buffer keeps whatever is actually in it and Enter still never confirms anything:
+-- <Up>/<Down> only highlight, so nothing gets accepted on that path either.
 vim.keymap.set('i', '<CR>', function()
-	if vim.fn.complete_info()['selected'] ~= -1 then return '\25' end -- <C-y>
-	return '\r'
-end, { expr = true, desc = 'Confirm selected completion, else newline' })
+	return vim.fn.pumvisible() == 1 and '<C-x><C-z><CR>' or '<CR>'
+end, { expr = true, desc = 'Newline, dismissing the completion menu' })
+
+-- <S-Tab> is deliberately untouched: it keeps Nvim's default backwards snippet jump.
+-- Note that the <Tab> map above is insert-mode only on purpose. Nvim's default covers
+-- { 'i', 's' }, and clangd's placeholders leave you in Select mode, so the Select half
+-- has to survive: widening this map to { 'i', 's' } means keeping the snippet branch.
 
 -- mini.statusline replaces vim-airline + vim-airline-themes. The sections below
 -- reproduce the airline settings that lived here: filename only, no
@@ -542,7 +568,18 @@ vim.keymap.set('n', '<leader><leader>', '<c-^>',    { silent = true })
 -- Break the arrow-key habit. <Nop> rather than :echo, which clobbered the message
 -- line and could trigger a hit-enter prompt.
 for _, key in ipairs({ '<Left>', '<Right>', '<Up>', '<Down>' }) do
-	vim.keymap.set({ 'n', 'v', 'i' }, key, '<Nop>')
+	vim.keymap.set({ 'n', 'v' }, key, '<Nop>')
+end
+vim.keymap.set('i', '<Left>',  '<Nop>')
+vim.keymap.set('i', '<Right>', '<Nop>')
+-- Insert-mode <Up>/<Down> are the exception: they still have to drive the completion
+-- popup, which is what nvim-cmp's preset mapped them to before mini.completion.
+-- Passing the key through unmapped gives the native pmenu behaviour - highlight the
+-- entry without inserting it - so <Tab> confirms it and <CR> walks away clean.
+for _, key in ipairs({ '<Up>', '<Down>' }) do
+	vim.keymap.set('i', key, function()
+		return vim.fn.pumvisible() == 1 and key or ''
+	end, { expr = true, desc = 'Completion menu navigation only' })
 end
 -- Undotree
 vim.keymap.set('n', '<F5>', vim.cmd.UndotreeToggle)
