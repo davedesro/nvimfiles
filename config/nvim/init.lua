@@ -148,9 +148,9 @@ require("lazy").setup({
 	-- GIT
 	{"tpope/vim-fugitive"},
 
-	-- Surround, statusline, animation, minimap - the suite is already pulled in as
-	-- a render-markdown dependency, so declare it properly rather than relying on
-	-- that transitive load.
+	-- The mini.nvim suite; the modules in use are set up further down. Already
+	-- pulled in as a render-markdown dependency, so declare it properly rather than
+	-- relying on that transitive load.
 	{ 'nvim-mini/mini.nvim' },
 })
 
@@ -256,76 +256,6 @@ end
 set_cursorword_hl()
 vim.api.nvim_create_autocmd('ColorScheme', { callback = set_cursorword_hl })
 
-local minimap = require('mini.map')
-minimap.setup({
-	integrations = {
-		minimap.gen_integration.builtin_search(),
-		-- default is errors only; clangd runs with --clang-tidy so warnings matter
-		minimap.gen_integration.diagnostic({
-			error = 'DiagnosticFloatingError',
-			warn  = 'DiagnosticFloatingWarn',
-		}),
-	},
-	symbols = {
-		-- Default encode symbols are the U+1FB00 "Legacy Computing" 3x2 blocks,
-		-- which many terminal fonts lack (renders as tofu/blank). The 2x2 set is
-		-- plain U+2580 block elements, available everywhere.
-		encode = minimap.gen_encode_symbols.block('2x2'),
-	},
-	-- window defaults are already side='right', width=10, winblend=25
-})
-
--- Encoded blocks carry no highlight of their own, so they render in
--- MiniMapNormal, which links to NormalFloat, which has no foreground and so
--- falls back to Normal's - the map ends up as bright as the buffer text it
--- stands for. Mix that foreground partway into the float's background instead:
--- same hue, just dimmed, which no fixed grey can promise (onedark's LineNr, for
--- one, is darker than NormalFloat's background and would leave the map
--- invisible). The scrollbar keeps its brighter Title/Delimiter colors and now
--- reads clearly against the dimmed blocks. Raise minimap_dim toward 1 for a
--- darker map; note 'winblend' is 25, which dims it further again.
-local minimap_dim = 0.5
-
-local function set_minimap_hl()
-	local float  = vim.api.nvim_get_hl(0, { name = 'NormalFloat', link = false })
-	local normal = vim.api.nvim_get_hl(0, { name = 'Normal',      link = false })
-	local fg, bg = float.fg or normal.fg, float.bg or normal.bg
-	-- Nothing to mix, so leave mini's default link alone rather than blanking it.
-	if not (fg and bg) then return end
-	local dimmed = 0
-	for _, channel in ipairs({ 65536, 256, 1 }) do
-		local a, b = math.floor(fg / channel) % 256, math.floor(bg / channel) % 256
-		dimmed = dimmed + math.floor(a + (b - a) * minimap_dim + 0.5) * channel
-	end
-	-- bg is passed through explicitly: the map window sets
-	-- winhighlight=NormalFloat:MiniMapNormal, so omitting it would drop the
-	-- float's own background.
-	vim.api.nvim_set_hl(0, 'MiniMapNormal', { fg = dimmed, bg = float.bg })
-end
-set_minimap_hl()
-vim.api.nvim_create_autocmd('ColorScheme', { callback = set_minimap_hl })
-
-vim.keymap.set('n', '<leader>mm', minimap.toggle,       { desc = 'Toggle minimap' })
-vim.keymap.set('n', '<leader>ms', minimap.toggle_side,  { desc = 'Toggle minimap side' })
-vim.keymap.set('n', '<leader>mf', minimap.toggle_focus, { desc = 'Focus minimap' })
-
--- mini.map deliberately provides no autoopen; wire it up for C/C++ buffers.
-vim.api.nvim_create_autocmd("FileType", {
-	group    = vim.api.nvim_create_augroup("MiniMapAutoOpen", { clear = true }),
-	pattern  = { "c", "cpp", "objc", "objcpp" },
-	callback = function(args)
-		-- skip fzf-lua previews, claudecode scratch buffers, etc.
-		if vim.bo[args.buf].buftype ~= "" then return end
-		vim.schedule(function()
-			-- FileType also fires for buffers loaded without a window
-			if vim.api.nvim_get_current_buf() ~= args.buf then return end
-			-- skip if this buffer landed inside a float
-			if vim.api.nvim_win_get_config(0).relative ~= "" then return end
-			minimap.open()
-		end)
-	end,
-})
-
 -- mini.completion replaces nvim-cmp + cmp-nvim-lsp. The old <C-Space> (complete)
 -- and <C-f>/<C-b> (scroll docs) are mini's defaults, and <C-e> is Vim's built-in
 -- complete_CTRL-E. The 'buffer' and 'path' cmp sources were never registered
@@ -358,14 +288,65 @@ end, { expr = true, desc = 'Confirm completion / snippet tabstop, else tab' })
 -- <C-x><C-z> stops completion without touching the text (:h i_CTRL-X_CTRL-Z), so the
 -- buffer keeps whatever is actually in it and Enter still never confirms anything:
 -- <Up>/<Down> only highlight, so nothing gets accepted on that path either.
+--
+-- The keys are handed to MiniPairs.cr() rather than returned directly: it appends
+-- <C-o>O (:h i_CTRL-O) when the cursor sits between the halves of a registered pair,
+-- which is what turns '{' followed by Enter into an opened-up block, and passes them
+-- through untouched everywhere else. Its argument stands in for the <CR> it would
+-- otherwise use, which is how the dismissal travels along in one string.
+-- replace_keycodes is off because cr() hands back already-escaped keys (hence the
+-- vim.keycode on ours); leaving it on would run them through nvim_replace_termcodes
+-- a second time. The one cost of <C-o>: it closes the redo record, so '.' after an
+-- insert that crossed such an Enter repeats only the opened line. Undo is not split,
+-- whatever :h i_CTRL-O says about that - measured on 0.12, a single u still reverts
+-- the whole insert.
 vim.keymap.set('i', '<CR>', function()
-	return vim.fn.pumvisible() == 1 and '<C-x><C-z><CR>' or '<CR>'
-end, { expr = true, desc = 'Newline, dismissing the completion menu' })
+	local keys = vim.fn.pumvisible() == 1 and '<C-x><C-z><CR>' or '<CR>'
+	-- The command-line window is an ordinary buffer, so this map applies there even
+	-- with mini.pairs' 'command' mode off - and there Enter runs the line and closes
+	-- the window, leaving the <C-o>O to execute back in the buffer underneath: a
+	-- jumplist hop, then a blank line opened at wherever that landed. The normal-mode
+	-- <CR> map further down exempts the same window, to keep from hijacking that Enter.
+	if vim.fn.getcmdwintype() ~= '' then return vim.keycode(keys) end
+	return MiniPairs.cr(vim.keycode(keys))
+end, { expr = true, replace_keycodes = false, desc = 'Newline / open a pair, dismissing the completion menu' })
 
 -- <S-Tab> is deliberately untouched: it keeps Nvim's default backwards snippet jump.
 -- Note that the <Tab> map above is insert-mode only on purpose. Nvim's default covers
 -- { 'i', 's' }, and clangd's placeholders leave you in Select mode, so the Select half
 -- has to survive: widening this map to { 'i', 's' } means keeping the snippet branch.
+
+-- mini.pairs closes brackets and quotes as they are typed; there was no autopair
+-- plugin here before. 'modes' is left at its default of insert mode only: a terminal
+-- buffer's keys belong to whatever is running in it, so 'terminal' would push the
+-- closing half and a <Left> into the claudecode float, and 'command' would close
+-- every '(' typed into a :LGrep regex or a <leader>R input() prompt.
+--
+-- Set up after the <CR> map above, which calls into it. mini.pairs auto-creates <BS>
+-- and <CR> only for keys that are still unmapped, so ordered this way it never makes
+-- a <CR> map for ours to replace, and contributes just <BS>, which deletes both
+-- halves of a pair from the inside. Nothing here needs the arrow keys to be unmapped
+-- either: the <Left>/<Right> that 'open' and 'close' return come out of a noremap
+-- mapping, so the insert-mode <Nop> maps further down do not swallow them.
+--
+-- The symmetric pairs ship refusing to open only after a backslash (and, for "'",
+-- after a letter), so the third quote of a triple lands at the end of an already
+-- doubled one and opens yet another pair: ``` types out as ```` and """ as """".
+-- Excluding the pair's own character as well makes markdown fences and Python
+-- docstrings type as themselves. The jump-over half is untouched, because 'closeopen'
+-- checks the character to the right before it considers opening anything, so an empty
+-- "" or '' still costs one keystroke per quote.
+require('mini.pairs').setup({
+	mappings = {
+		-- The stock patterns with the pair's own character added to each class.
+		-- Keep the '^': neigh_match find()s over two characters, which is more
+		-- than two bytes once one of them is multibyte, and unanchored the class
+		-- would just match one byte in and open the pair anyway.
+		['"'] = { neigh_pattern = '^[^\\"]'   },
+		["'"] = { neigh_pattern = "^[^%a\\']" },
+		['`'] = { neigh_pattern = '^[^\\`]'   },
+	},
+})
 
 -- mini.statusline replaces vim-airline + vim-airline-themes. The sections below
 -- reproduce the airline settings that lived here: filename only, no
