@@ -218,7 +218,7 @@ vim.api.nvim_create_autocmd("FileType", {
 -- Cursor animation only. Scroll turns one <C-d> into up to 60 redraws ~4ms apart
 -- (expensive over tmux on WSL2) and resize fires on every tmux pane resize.
 require('mini.animate').setup({
-	scroll = { enable = false },
+	scroll = { enable = true },
 	resize = { enable = false },
 	open   = { enable = false },
 	close  = { enable = false },
