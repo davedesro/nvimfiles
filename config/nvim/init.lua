@@ -49,7 +49,7 @@ require("lazy").setup({
 			require("onedark").setup({
 				style = "dark", -- Ensure you're using the dark style
 				highlights = {
-					["ColorColumn"]  = {                bg = '$orange'               },
+					["ColorColumn"]  = {                bg = '#705030'               },
 					["Folded"]       = {fg = '#FFFF00', bg = '$black', fmt = 'bold'  },
 					["CursorLine"]   = {                bg = '#202020'               },
 					["Normal"]       = {                bg = '#000000'               },
