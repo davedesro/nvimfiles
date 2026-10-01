@@ -202,6 +202,33 @@ vim.api.nvim_create_autocmd("LspAttach", {
 	end,
 })
 
+-- nvim-treesitter's folds.scm folds whole definitions and statements, which
+-- starts the fold on a function's signature even when "{" is on the next line.
+-- Fold on the braces instead, as syntax folding did, so a brace fold starts on
+-- the line holding "{"; the non-brace entries are nvim-treesitter's, unchanged.
+-- The cpp query repeats the c one rather than ";inherits: c", which resolves
+-- to nvim-treesitter's c query file, not to this one.
+local c_folds = [[
+[
+	(compound_statement)
+	(field_declaration_list)
+	(enumerator_list)
+	(initializer_list)
+	(declaration_list)
+	(comment)
+	(preproc_if)
+	(preproc_elif)
+	(preproc_else)
+	(preproc_ifdef)
+	(preproc_function_def)
+	(gnu_asm_expression)
+	(preproc_include)+
+] @fold
+]]
+vim.treesitter.query.set("c", "folds", c_folds)
+vim.treesitter.query.set("cpp", "folds",
+	c_folds .. "[(requirement_seq) (compound_requirement)] @fold\n")
+
 -- The c/cpp parsers are installed but nothing started treesitter for them.
 -- foldmethod=syntax yields no folds once treesitter is the highlighter, hence
 -- the local foldexpr.
